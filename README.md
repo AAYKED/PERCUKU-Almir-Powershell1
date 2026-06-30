@@ -235,6 +235,34 @@ Les produits suivis sont décrits dans **`config/products.json`** (PS5 Pro et Sl
 - En local (Windows) : planifie une tâche qui exécute `pwsh -File Watch-Prices.ps1` (ex. toutes les heures) via le Planificateur de tâches.
 - Sur GitHub : `.github/workflows/watch-prices.yml` relève les prix **chaque jour** ; ajoute un secret de dépôt `PROMO_ALERT_WEBHOOK` pour recevoir les alertes.
 
+### Tout en local, sans GitHub
+
+Le projet n'a **pas besoin de GitHub** pour fonctionner : tout tourne sur ta machine.
+
+1. **Récupère le code** sur ton PC (une fois) :
+   ```powershell
+   git clone -b claude/promo-code-aggregator-o81kf4 https://github.com/AAYKED/PERCUKU-Almir-Powershell1.git
+   cd PERCUKU-Almir-Powershell1
+   ```
+   (ou télécharge le ZIP du dépôt et dézippe-le)
+
+2. **Vérifie PowerShell 7** : `pwsh --version` (sinon `winget install Microsoft.PowerShell`).
+
+3. **Initialise puis relève** :
+   ```powershell
+   pwsh ./Watch-Prices.ps1 -NoAlert   # 1re fois : enregistre les prix de référence
+   pwsh ./Watch-Prices.ps1            # ensuite : alerte si un prix bouge
+   ```
+
+4. **Rends-le automatique** (Planificateur de tâches Windows, une seule commande) :
+   ```powershell
+   pwsh ./Register-PriceWatchTask.ps1 -IntervalHours 6 -RunNow   # relève toutes les 6 h
+   pwsh ./Register-PriceWatchTask.ps1 -Unregister                # pour arrêter
+   ```
+   La tâche tourne en arrière-plan ; tu es alerté en console (si la fenêtre est ouverte), dans `data/alerts.json`, et par notification Windows si `BurntToast` est installé. Pour une alerte qui te suit partout, renseigne `alertWebhookUrl` (Discord/Slack) dans `config/settings.json`.
+
+> Linux/macOS : `Register-PriceWatchTask.ps1` affiche la ligne `cron` équivalente à coller dans `crontab -e`.
+
 > ⚠️ Les pages des grands sites sont souvent dynamiques (JavaScript) : pour extraire un prix fiable, `url` doit pointer vers une page qui contient le prix dans le HTML (la fiche produit fonctionne souvent via ses données structurées JSON-LD), et `pricePattern` doit correspondre. Donne-moi les URLs exactes des fiches PS5 et je calibre les motifs.
 
 ## Tests
