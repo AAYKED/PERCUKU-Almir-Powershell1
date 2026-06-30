@@ -25,9 +25,25 @@ $ErrorActionPreference = 'Stop'
 $script:ModuleRoot  = Split-Path -Parent $PSScriptRoot
 $script:ConfigPath  = Join-Path $script:ModuleRoot 'config/settings.json'
 
+# User-Agent navigateur : indispensable pour que les grands sites (Amazon, Fnac,
+# Carrefour) servent une vraie page produit plutot qu'une page anti-robot vide.
+$script:BrowserUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'
+
 # ---------------------------------------------------------------------------
 # Helpers internes
 # ---------------------------------------------------------------------------
+
+# En-tetes HTTP "navigateur" pour les requetes de scraping / prix.
+function Get-RequestHeaders {
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param()
+    return @{
+        'User-Agent'      = $script:BrowserUA
+        'Accept'          = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+        'Accept-Language' = 'fr-FR,fr;q=0.9,en;q=0.8'
+    }
+}
 
 # Validation d'un code pays ISO (2 lettres) ou du mot-cle 'ALL'.
 function Test-CountryCode {
@@ -792,8 +808,7 @@ function Invoke-PromoScraper {
         throw "Scraper '$($Scraper.id)' : URL non HTTPS '$url' (HTTPS obligatoire)."
     }
 
-    $resp = Invoke-WebRequest -Uri $url -TimeoutSec $TimeoutSec -MaximumRedirection 3 `
-        -Headers @{ 'User-Agent' = 'PromoAggregator/1.0 (+promo-scraper)' }
+    $resp = Invoke-WebRequest -Uri $url -TimeoutSec $TimeoutSec -MaximumRedirection 3 -Headers (Get-RequestHeaders)
     $html = [string]$resp.Content
 
     return ConvertFrom-ScrapedHtml -Html $html -Scraper $Scraper -Today $Today
@@ -1263,8 +1278,7 @@ function Update-PriceWatch {
             if ([string]::IsNullOrWhiteSpace($pattern)) { Write-Warning "Produit '$($product.id)'/$siteId : pricePattern manquant."; $failed++; continue }
 
             try {
-                $resp = Invoke-WebRequest -Uri $url -TimeoutSec $TimeoutSec -MaximumRedirection 3 `
-                    -Headers @{ 'User-Agent' = 'PromoAggregator/1.0 (+price-watch)' }
+                $resp = Invoke-WebRequest -Uri $url -TimeoutSec $TimeoutSec -MaximumRedirection 3 -Headers (Get-RequestHeaders)
                 $price = ConvertFrom-ScrapedPrice -Html ([string]$resp.Content) -Pattern $pattern
             } catch {
                 Write-Warning "Produit '$($product.id)'/$siteId : page injoignable -> $($_.Exception.Message)"
