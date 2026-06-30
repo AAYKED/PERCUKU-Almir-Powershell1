@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1.0",
+  "_comment": "Produits suivis pour les ALERTES DE PRIX (baisse / hausse). Pour chaque site : 'url' = page produit reelle, 'pricePattern' = regex avec un groupe nomme obligatoire (?<price>...). 'alertThresholdPercent' = variation minimale en % pour declencher une alerte (0 = toute variation, hausse comme baisse).",
+  "_caveat": "IMPORTANT : remplace chaque 'url' par la VRAIE page produit, et ajuste 'pricePattern' a cette page. Les motifs ci-dessous ciblent des donnees structurees JSON-LD (souvent presentes) mais doivent etre verifies par page. Respecte les CGU et le robots.txt des sites.",
+  "currency": "EUR",
+  "products": [
+    {
+      "id": "ps5-pro",
+      "name": "PlayStation 5 Pro",
+      "alertThresholdPercent": 0,
+      "sites": [
+        {
+          "site": "amazon-fr",
+          "url": "https://www.amazon.fr/dp/REMPLACER-PAR-ASIN-PS5-PRO",
+          "pricePattern": "\"price\"\\s*:\\s*\"?(?<price>[0-9]+(?:[.,][0-9]{2})?)",
+          "enabled": true
+        },
+        {
+          "site": "fnac",
+          "url": "https://www.fnac.com/REMPLACER-PAR-PAGE-PS5-PRO",
+          "pricePattern": "\"price\"\\s*:\\s*\"?(?<price>[0-9]+(?:[.,][0-9]{2})?)",
+          "enabled": true
+        },
+        {
+          "site": "carrefour",
+          "url": "https://www.carrefour.fr/REMPLACER-PAR-PAGE-PS5-PRO",
+          "pricePattern": "\"price\"\\s*:\\s*\"?(?<price>[0-9]+(?:[.,][0-9]{2})?)",
+          "enabled": true
+        }
+      ]
+    },
+    {
+      "id": "ps5-slim",
+      "name": "PlayStation 5 Slim",
+      "alertThresholdPercent": 0,
+      "sites": [
+        {
+          "site": "amazon-fr",
+          "url": "https://www.amazon.fr/dp/REMPLACER-PAR-ASIN-PS5-SLIM",
+          "pricePattern": "\"price\"\\s*:\\s*\"?(?<price>[0-9]+(?:[.,][0-9]{2})?)",
+          "enabled": true
+        },
+        {
+          "site": "fnac",
+          "url": "https://www.fnac.com/REMPLACER-PAR-PAGE-PS5-SLIM",
+          "pricePattern": "\"price\"\\s*:\\s*\"?(?<price>[0-9]+(?:[.,][0-9]{2})?)",
+          "enabled": true
+        },
+        {
+          "site": "carrefour",
+          "url": "https://www.carrefour.fr/REMPLACER-PAR-PAGE-PS5-SLIM",
+          "pricePattern": "\"price\"\\s*:\\s*\"?(?<price>[0-9]+(?:[.,][0-9]{2})?)",
+          "enabled": true
+        }
+      ]
+    }
+  ]
+}

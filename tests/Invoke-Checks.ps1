@@ -200,6 +200,61 @@ try {
         @($defs | Where-Object { $_.id -like 'amazon*' }).Count -ge 1
     }
 
+    Write-Host "`nPrix : normalisation (ConvertTo-Price)" -ForegroundColor Cyan
+    Check "'599,99 EUR' -> 599.99"   { (ConvertTo-Price '599,99 EUR') -eq [decimal]599.99 }
+    Check "'1 199,99' -> 1199.99"    { (ConvertTo-Price '1 199,99') -eq [decimal]1199.99 }
+    Check '"$1,299.00" -> 1299.00'   { (ConvertTo-Price '$1,299.00') -eq [decimal]1299.00 }
+    Check "'1.299,00' -> 1299.00"    { (ConvertTo-Price '1.299,00') -eq [decimal]1299.00 }
+    Check "'799' -> 799"             { (ConvertTo-Price '799') -eq [decimal]799 }
+    Check "vide -> null"             { $null -eq (ConvertTo-Price '') }
+
+    Write-Host "`nPrix : extraction HTML (ConvertFrom-ScrapedPrice)" -ForegroundColor Cyan
+    Check 'extrait depuis JSON-LD' {
+        (ConvertFrom-ScrapedPrice -Html '...{"@type":"Offer","price":"799.99","priceCurrency":"EUR"}...' -Pattern '"price"\s*:\s*"?(?<price>[0-9]+(?:[.,][0-9]{2})?)') -eq [decimal]799.99
+    }
+    Check 'extrait un prix en euros texte' {
+        (ConvertFrom-ScrapedPrice -Html '<span>Prix : 699,00 EUR</span>' -Pattern '(?<price>[0-9][0-9 .,]*)\s*EUR') -eq [decimal]699.00
+    }
+    Check 'aucun match -> null' {
+        $null -eq (ConvertFrom-ScrapedPrice -Html 'pas de prix ici' -Pattern '"price"\s*:\s*"?(?<price>[0-9.]+)')
+    }
+
+    Write-Host "`nPrix : detection de variation (Compare-PriceChange)" -ForegroundColor Cyan
+    Check 'baisse detectee' {
+        $c = Compare-PriceChange -OldPrice ([decimal]799.99) -NewPrice ([decimal]699.99)
+        $c.Changed -and ($c.Direction -eq 'baisse') -and ($c.Percent -lt 0)
+    }
+    Check 'hausse detectee' {
+        $c = Compare-PriceChange -OldPrice ([decimal]699.99) -NewPrice ([decimal]749.99)
+        $c.Changed -and ($c.Direction -eq 'hausse') -and ($c.Percent -gt 0)
+    }
+    Check 'stable -> pas de changement' {
+        -not (Compare-PriceChange -OldPrice ([decimal]799) -NewPrice ([decimal]799)).Changed
+    }
+    Check 'premier releve -> nouveau, pas d''alerte' {
+        $c = Compare-PriceChange -OldPrice $null -NewPrice ([decimal]799)
+        (-not $c.Changed) -and ($c.Direction -eq 'nouveau')
+    }
+    Check 'seuil respecte (1% < 2% seuil)' {
+        -not (Compare-PriceChange -OldPrice ([decimal]100) -NewPrice ([decimal]101) -ThresholdPercent 2).Changed
+    }
+
+    Write-Host "`nPrix : configuration produits et historique" -ForegroundColor Cyan
+    Check 'config/products.json valide (PS5 Pro + Slim)' {
+        $prods = Get-PromoProducts -Path (Join-Path $Root 'config/products.json')
+        $ids = @($prods.products.id)
+        ($ids -contains 'ps5-pro') -and ($ids -contains 'ps5-slim')
+    }
+    Check 'PS5 suivie sur amazon, fnac et carrefour' {
+        $prods = Get-PromoProducts -Path (Join-Path $Root 'config/products.json')
+        $sites = @(($prods.products | Where-Object id -eq 'ps5-pro').sites.site)
+        ($sites -contains 'amazon-fr') -and ($sites -contains 'fnac') -and ($sites -contains 'carrefour')
+    }
+    Check 'historique des prix chargeable' {
+        $h = Get-PriceHistory -Path (Join-Path $Root 'data/price-history.json')
+        $h.PSObject.Properties.Name -contains 'entries'
+    }
+
     Write-Host "`nValidation du catalogue livre (data/promo-codes.json)" -ForegroundColor Cyan
     Check 'catalogue principal valide'  { $null -ne (Get-PromoCatalog) }
 }

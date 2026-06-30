@@ -1,5 +1,8 @@
-# Fichiers temporaires d'ecriture atomique du catalogue
+# Fichiers temporaires d'ecriture atomique
 *.tmp
+
+# Journal d'alertes genere a l'execution (l'historique des prix, lui, est suivi)
+data/alerts.json
 
 # PowerShell / modules locaux
 *.log

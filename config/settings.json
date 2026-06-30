@@ -1,8 +1,9 @@
 {
   "schemaVersion": "1.0",
-  "_comment": "Reglages de l'agregateur. 'defaultCountry' = filtre pays applique par defaut (code ISO comme FR, CN, US, ou 'ALL' pour le monde entier). 'includeRestrictedRegions' autorise les sites des regions a acces restreint (ex: Chine) meme si un pays precis est demande.",
+  "_comment": "Reglages de l'agregateur. 'defaultCountry' = filtre pays applique par defaut (code ISO comme FR, CN, US, ou 'ALL' pour le monde entier). 'includeRestrictedRegions' autorise les sites des regions a acces restreint (ex: Chine) meme si un pays precis est demande. 'alertWebhookUrl' (optionnel, HTTPS) = adresse a laquelle envoyer les alertes de prix (compatible Discord/Slack : corps JSON { content }). Laisse vide pour des alertes uniquement en console/notification locale.",
   "defaultCountry": "ALL",
   "includeRestrictedRegions": true,
   "restrictedRegions": ["CN", "RU", "IR", "KP"],
-  "catalogPath": "data/promo-codes.json"
+  "catalogPath": "data/promo-codes.json",
+  "alertWebhookUrl": ""
 }

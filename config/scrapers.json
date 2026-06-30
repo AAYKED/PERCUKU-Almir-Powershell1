@@ -1,7 +1,7 @@
 {
   "schemaVersion": "1.0",
-  "_comment": "Sites a scraper, par nom. Pour AJOUTER un site : duplique un bloc, change id/name/url/countries, et ajuste 'codePattern' (regex avec un groupe nomme obligatoire (?<code>...), groupes optionnels (?<description>...) et (?<discount>...)). 'enabled' active/desactive le site. La mise a jour tourne tous les 3 jours (.github/workflows/update-promos.yml) ou via ./Update-Promos.ps1.",
-  "_caveat": "Le scraping doit respecter les CGU et le robots.txt de chaque site. Les pages des grands sites sont souvent dynamiques (JavaScript) : 'url' doit pointer vers une page contenant reellement les codes en HTML, et 'codePattern' doit etre ajuste a la structure de cette page pour extraire de vrais codes. Les codes scrapes ont une validite glissante (defaultValidityDays) et expirent seuls s'ils disparaissent de la page.",
+  "_comment": "Sites a scraper pour les CODES PROMO, par nom. Perimetre actuel : Amazon et Fnac. (Carrefour est suivi uniquement pour le prix de la PS5 : voir config/products.json.) Pour ajouter un site : duplique un bloc ou utilise Add-PromoScraper. 'codePattern' = regex avec un groupe nomme obligatoire (?<code>...).",
+  "_caveat": "Respecte les CGU et le robots.txt de chaque site. 'url' doit pointer vers une page contenant reellement les codes en HTML, et 'codePattern' doit etre ajuste a cette page pour extraire de vrais codes.",
   "scrapers": [
     {
       "id": "amazon-fr",
@@ -15,10 +15,10 @@
       "enabled": true
     },
     {
-      "id": "amazon-com",
-      "name": "Amazon US",
-      "url": "https://www.amazon.com/promocodes",
-      "countries": ["US"],
+      "id": "fnac",
+      "name": "Fnac",
+      "url": "https://www.fnac.com/promotions",
+      "countries": ["FR"],
       "categories": ["general"],
       "codePattern": "(?i)code[^A-Za-z0-9]{0,15}(?<code>[A-Z0-9]{5,12})",
       "defaultValidityDays": 30,

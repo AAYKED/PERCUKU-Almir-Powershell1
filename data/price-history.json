@@ -1,0 +1,5 @@
+{
+  "schemaVersion": "1.0",
+  "_comment": "Historique des prix releves (genere/mis a jour automatiquement). Ne pas editer a la main : sert de reference pour detecter les baisses/hausses.",
+  "entries": []
+}

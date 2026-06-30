@@ -219,3 +219,47 @@ Describe 'ConvertFrom-ScrapedHtml (scraping)' {
         { ConvertFrom-ScrapedHtml -Html $script:Html -Scraper $bad } | Should -Throw
     }
 }
+
+Describe 'Prix : normalisation et detection' {
+    It 'normalise les formats de prix' {
+        ConvertTo-Price '599,99 EUR' | Should -Be ([decimal]599.99)
+        ConvertTo-Price '1 199,99'   | Should -Be ([decimal]1199.99)
+        ConvertTo-Price '$1,299.00'  | Should -Be ([decimal]1299.00)
+        ConvertTo-Price '1.299,00'   | Should -Be ([decimal]1299.00)
+        ConvertTo-Price '799'        | Should -Be ([decimal]799)
+        ConvertTo-Price ''           | Should -BeNullOrEmpty
+    }
+    It 'extrait un prix depuis du JSON-LD' {
+        ConvertFrom-ScrapedPrice -Html '..."price":"799.99","priceCurrency":"EUR"...' `
+            -Pattern '"price"\s*:\s*"?(?<price>[0-9]+(?:[.,][0-9]{2})?)' | Should -Be ([decimal]799.99)
+    }
+    It 'renvoie null si aucun prix' {
+        ConvertFrom-ScrapedPrice -Html 'rien' -Pattern '"price"\s*:\s*"?(?<price>[0-9.]+)' | Should -BeNullOrEmpty
+    }
+    It 'detecte une baisse' {
+        $c = Compare-PriceChange -OldPrice ([decimal]799.99) -NewPrice ([decimal]699.99)
+        $c.Changed | Should -BeTrue
+        $c.Direction | Should -Be 'baisse'
+    }
+    It 'detecte une hausse' {
+        (Compare-PriceChange -OldPrice ([decimal]699) -NewPrice ([decimal]749)).Direction | Should -Be 'hausse'
+    }
+    It 'ne signale pas le premier releve' {
+        (Compare-PriceChange -OldPrice $null -NewPrice ([decimal]799)).Changed | Should -BeFalse
+    }
+    It 'respecte le seuil de variation' {
+        (Compare-PriceChange -OldPrice ([decimal]100) -NewPrice ([decimal]101) -ThresholdPercent 2).Changed | Should -BeFalse
+    }
+}
+
+Describe 'Produits suivis' {
+    It 'charge la PS5 sur les trois sites' {
+        $prods = Get-PromoProducts -Path (Join-Path (Split-Path -Parent $PSScriptRoot) 'config/products.json')
+        @($prods.products.id) | Should -Contain 'ps5-pro'
+        @($prods.products.id) | Should -Contain 'ps5-slim'
+        $sites = @(($prods.products | Where-Object id -eq 'ps5-pro').sites.site)
+        $sites | Should -Contain 'amazon-fr'
+        $sites | Should -Contain 'fnac'
+        $sites | Should -Contain 'carrefour'
+    }
+}

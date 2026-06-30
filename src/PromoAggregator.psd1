@@ -10,7 +10,9 @@
         'Test-PromoCodeActive', 'Test-SiteMatchesCountry', 'Test-CountryCode', 'ConvertTo-PromoDate',
         'Find-PromoCode', 'Add-PromoSite', 'Add-PromoCode', 'Set-PromoCode', 'Remove-PromoCode',
         'Get-PromoSources', 'Merge-PromoCatalog', 'Update-PromoCatalog',
-        'Get-PromoScrapers', 'ConvertFrom-ScrapedHtml', 'Invoke-PromoScraper', 'Add-PromoScraper'
+        'Get-PromoScrapers', 'ConvertFrom-ScrapedHtml', 'Invoke-PromoScraper', 'Add-PromoScraper',
+        'ConvertTo-Price', 'ConvertFrom-ScrapedPrice', 'Compare-PriceChange',
+        'Get-PromoProducts', 'Get-PriceHistory', 'Save-PriceHistory', 'Update-PriceWatch', 'Send-PriceAlert'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

@@ -966,10 +966,370 @@ function Update-PromoCatalog {
     }
 }
 
+# ---------------------------------------------------------------------------
+# Suivi de prix et alertes (PS5, etc.)
+# ---------------------------------------------------------------------------
+
+function ConvertTo-Price {
+    <#
+    .SYNOPSIS Normalise une chaine de prix en [decimal] (gere formats europeen et anglo-saxon).
+    .DESCRIPTION
+        Exemples : '599,99 EUR' -> 599.99 ; '1 199,99' -> 1199.99 ; '$1,299.00' -> 1299.00 ;
+        '1.299,00' -> 1299.00. Retourne $null si non interpretable.
+    #>
+    [CmdletBinding()]
+    [OutputType([Nullable[decimal]])]
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $null }
+    $s = ($Text -replace '[^\d.,]', '')   # ne garder que chiffres, point, virgule
+    if ([string]::IsNullOrWhiteSpace($s)) { return $null }
+
+    $hasComma = $s.Contains(',')
+    $hasDot = $s.Contains('.')
+
+    if ($hasComma -and $hasDot) {
+        if ($s.LastIndexOf(',') -gt $s.LastIndexOf('.')) {
+            # virgule decimale (europeen) : '.' = milliers
+            $s = ($s -replace '\.', '') -replace ',', '.'
+        } else {
+            # point decimal (anglo) : ',' = milliers
+            $s = $s -replace ',', ''
+        }
+    } elseif ($hasComma) {
+        $parts = $s.Split(',')
+        if ($parts.Count -eq 2 -and $parts[1].Length -le 2) {
+            $s = $s -replace ',', '.'   # decimale
+        } else {
+            $s = $s -replace ',', ''    # milliers
+        }
+    } elseif ($hasDot) {
+        $parts = $s.Split('.')
+        if ($parts.Count -gt 2) {
+            $s = $s -replace '\.', ''   # plusieurs points => milliers
+        } elseif ($parts.Count -eq 2 -and $parts[1].Length -eq 3 -and $parts[0].Length -le 3) {
+            $s = $s -replace '\.', ''   # ex '1.199' => 1199 (millier), pas une decimale
+        }
+        # sinon le point reste decimal
+    }
+
+    $out = [decimal]0
+    if ([decimal]::TryParse($s, [System.Globalization.NumberStyles]::Float,
+            [System.Globalization.CultureInfo]::InvariantCulture, [ref]$out)) {
+        return $out
+    }
+    return $null
+}
+
+function ConvertFrom-ScrapedPrice {
+    <#
+    .SYNOPSIS Extrait un prix d'un HTML via une regex (groupe nomme 'price'). Fonction pure, testable.
+    .OUTPUTS [decimal] ou $null si non trouve.
+    #>
+    [CmdletBinding()]
+    [OutputType([Nullable[decimal]])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Html,
+        [Parameter(Mandatory)][string]$Pattern
+    )
+
+    if ([string]::IsNullOrEmpty($Html)) { return $null }
+    $regex = [regex]::new($Pattern,
+        ([System.Text.RegularExpressions.RegexOptions]::IgnoreCase `
+            -bor [System.Text.RegularExpressions.RegexOptions]::Singleline `
+            -bor [System.Text.RegularExpressions.RegexOptions]::CultureInvariant),
+        [timespan]::FromSeconds(5))
+    try {
+        $m = $regex.Match($Html)
+    } catch [System.Text.RegularExpressions.RegexMatchTimeoutException] {
+        throw "Motif de prix trop couteux (timeout regex)."
+    }
+    if (-not $m.Success) { return $null }
+    $raw = if ($m.Groups['price'].Success) { $m.Groups['price'].Value } else { $m.Value }
+    return ConvertTo-Price -Text $raw
+}
+
+function Compare-PriceChange {
+    <#
+    .SYNOPSIS Compare un ancien et un nouveau prix et qualifie la variation (baisse/hausse/stable).
+    .OUTPUTS [pscustomobject] { Changed; Direction; Percent; Delta }.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [AllowNull()][Nullable[decimal]]$OldPrice,
+        [Parameter(Mandatory)][decimal]$NewPrice,
+        [double]$ThresholdPercent = 0
+    )
+
+    if ($null -eq $OldPrice) {
+        return [pscustomobject]@{ Changed = $false; Direction = 'nouveau'; Percent = 0.0; Delta = [decimal]0 }
+    }
+    $delta = $NewPrice - $OldPrice
+    if ($delta -eq 0 -or $OldPrice -eq 0) {
+        return [pscustomobject]@{ Changed = $false; Direction = 'stable'; Percent = 0.0; Delta = $delta }
+    }
+    $pct = [math]::Round([double]($delta / $OldPrice) * 100.0, 2)
+    $direction = if ($delta -lt 0) { 'baisse' } else { 'hausse' }
+    $changed = [math]::Abs($pct) -ge $ThresholdPercent
+    return [pscustomobject]@{ Changed = $changed; Direction = $direction; Percent = $pct; Delta = $delta }
+}
+
+function Get-PromoProducts {
+    <#
+    .SYNOPSIS Charge la liste des produits suivis (config/products.json).
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([string]$Path)
+
+    if (-not $Path) { $Path = Join-Path $script:ModuleRoot 'config/products.json' }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return [pscustomobject]@{ schemaVersion = '1.0'; products = @() }
+    }
+    try {
+        $raw = Get-Content -LiteralPath $Path -Raw -Encoding utf8
+        $obj = $raw | ConvertFrom-Json -Depth 20
+    } catch {
+        throw "Fichier produits illisible '$Path' : $($_.Exception.Message)"
+    }
+    if (-not ($obj.PSObject.Properties.Name -contains 'products') -or $null -eq $obj.products) {
+        throw "Fichier produits invalide : cle 'products' manquante."
+    }
+    foreach ($p in @($obj.products)) {
+        foreach ($req in 'id', 'name', 'sites') {
+            if (-not ($p.PSObject.Properties.Name -contains $req)) {
+                throw "Produit invalide : champ '$req' manquant."
+            }
+        }
+    }
+    return $obj
+}
+
+function Get-PriceHistory {
+    <#
+    .SYNOPSIS Charge l'historique des prix (data/price-history.json).
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([string]$Path)
+
+    if (-not $Path) { $Path = Join-Path $script:ModuleRoot 'data/price-history.json' }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        return [pscustomobject]@{ schemaVersion = '1.0'; entries = @() }
+    }
+    try {
+        $raw = Get-Content -LiteralPath $Path -Raw -Encoding utf8
+        $obj = $raw | ConvertFrom-Json -Depth 20
+    } catch {
+        throw "Historique des prix illisible '$Path' : $($_.Exception.Message)"
+    }
+    if (-not ($obj.PSObject.Properties.Name -contains 'entries') -or $null -eq $obj.entries) {
+        $obj | Add-Member -NotePropertyName entries -NotePropertyValue @() -Force
+    }
+    return $obj
+}
+
+function Save-PriceHistory {
+    <#
+    .SYNOPSIS Sauvegarde l'historique des prix (ecriture atomique UTF-8).
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)]$History, [string]$Path)
+
+    if (-not $Path) { $Path = Join-Path $script:ModuleRoot 'data/price-history.json' }
+    if ($PSCmdlet.ShouldProcess($Path, 'Ecrire l''historique des prix')) {
+        $json = $History | ConvertTo-Json -Depth 20
+        $tmp = "$Path.tmp"
+        [System.IO.File]::WriteAllText($tmp, $json, [System.Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $tmp -Destination $Path -Force
+    }
+}
+
+function Send-PriceAlert {
+    <#
+    .SYNOPSIS Notifie une variation de prix : console + fichier d'alertes + webhook/toast optionnels.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)]$Alert,
+        [pscustomobject]$Config,
+        [string]$AlertsPath
+    )
+
+    if (-not $Config) { $Config = Get-PromoConfig }
+    if (-not $AlertsPath) { $AlertsPath = Join-Path $script:ModuleRoot 'data/alerts.json' }
+
+    $symbol = if ($Alert.Direction -eq 'baisse') { 'BAISSE v' } else { 'HAUSSE ^' }
+    $message = "[ALERTE PRIX] {0} | {1} sur {2} : {3} -> {4} EUR ({5}{6}%)" -f `
+        $symbol, $Alert.ProductName, $Alert.Site, $Alert.OldPrice, $Alert.NewPrice, `
+        $(if ($Alert.Percent -gt 0) { '+' } else { '' }), $Alert.Percent
+
+    # 1) Console (couleur selon le sens)
+    $color = if ($Alert.Direction -eq 'baisse') { 'Green' } else { 'Red' }
+    Write-Host $message -ForegroundColor $color
+    if ($Alert.Url) { Write-Host "          $($Alert.Url)" -ForegroundColor DarkGray }
+
+    # 2) Fichier d'alertes (journal, plafonne a 200 entrees)
+    try {
+        $doc = if (Test-Path -LiteralPath $AlertsPath) {
+            Get-Content -LiteralPath $AlertsPath -Raw -Encoding utf8 | ConvertFrom-Json -Depth 20
+        } else {
+            [pscustomobject]@{ schemaVersion = '1.0'; alerts = @() }
+        }
+        if (-not ($doc.PSObject.Properties.Name -contains 'alerts') -or $null -eq $doc.alerts) {
+            $doc | Add-Member -NotePropertyName alerts -NotePropertyValue @() -Force
+        }
+        $doc.alerts = @(@($doc.alerts) + $Alert | Select-Object -Last 200)
+        if ($PSCmdlet.ShouldProcess($AlertsPath, 'Journaliser l''alerte')) {
+            $tmp = "$AlertsPath.tmp"
+            [System.IO.File]::WriteAllText($tmp, ($doc | ConvertTo-Json -Depth 20), [System.Text.UTF8Encoding]::new($false))
+            Move-Item -LiteralPath $tmp -Destination $AlertsPath -Force
+        }
+    } catch {
+        Write-Warning "Impossible de journaliser l'alerte : $($_.Exception.Message)"
+    }
+
+    # 3) Webhook optionnel (HTTPS uniquement) : config ou variable d'environnement
+    $hook = ''
+    if ($Config.PSObject.Properties.Name -contains 'alertWebhookUrl' -and $Config.alertWebhookUrl) {
+        $hook = [string]$Config.alertWebhookUrl
+    } elseif ($env:PROMO_ALERT_WEBHOOK) {
+        $hook = [string]$env:PROMO_ALERT_WEBHOOK
+    }
+    if ($hook -match '^https://') {
+        try {
+            Invoke-RestMethod -Method Post -Uri $hook -TimeoutSec 10 -ContentType 'application/json; charset=utf-8' `
+                -Body (@{ content = $message } | ConvertTo-Json) | Out-Null
+        } catch {
+            Write-Warning "Webhook d'alerte injoignable : $($_.Exception.Message)"
+        }
+    }
+
+    # 4) Notification Windows (best-effort, si BurntToast est installe)
+    if ($IsWindows) {
+        try {
+            if (Get-Module -ListAvailable -Name BurntToast) {
+                Import-Module BurntToast -ErrorAction Stop
+                New-BurntToastNotification -Text 'Alerte prix', $message -ErrorAction Stop
+            }
+        } catch {
+            Write-Verbose "Notification toast indisponible : $($_.Exception.Message)"
+        }
+    }
+}
+
+function Update-PriceWatch {
+    <#
+    .SYNOPSIS Releve le prix des produits suivis, detecte les variations et declenche les alertes.
+    .DESCRIPTION
+        Pour chaque produit (config/products.json) et chaque site active : telecharge la page
+        (HTTPS), extrait le prix, le compare au dernier prix connu (data/price-history.json),
+        met a jour l'historique et envoie une alerte en cas de baisse ou de hausse (selon
+        'alertThresholdPercent'). Les pages injoignables ou sans prix sont ignorees sans
+        interrompre le suivi.
+    .OUTPUTS [pscustomobject] { Checked; Alerts; Failed; Notifications }.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([pscustomobject])]
+    param(
+        [string]$ProductsPath,
+        [string]$HistoryPath,
+        [pscustomobject]$Config,
+        [int]$TimeoutSec = 20,
+        [switch]$NoAlert
+    )
+
+    if (-not $Config) { $Config = Get-PromoConfig }
+    if (-not $HistoryPath) { $HistoryPath = Join-Path $script:ModuleRoot 'data/price-history.json' }
+
+    $products = Get-PromoProducts -Path $ProductsPath
+    $history = Get-PriceHistory -Path $HistoryPath
+    $today = (Get-Date).Date
+    $stamp = $today.ToString('yyyy-MM-dd')
+    $checked = 0; $failed = 0
+    $alerts = [System.Collections.Generic.List[object]]::new()
+
+    foreach ($product in @($products.products)) {
+        $threshold = if ($product.PSObject.Properties.Name -contains 'alertThresholdPercent') { [double]$product.alertThresholdPercent } else { 0.0 }
+
+        foreach ($site in @($product.sites)) {
+            if ($site.PSObject.Properties.Name -contains 'enabled' -and -not $site.enabled) { continue }
+            $siteId = if ($site.PSObject.Properties.Name -contains 'site') { [string]$site.site } else { '?' }
+            $url = if ($site.PSObject.Properties.Name -contains 'url') { [string]$site.url } else { '' }
+            $pattern = if ($site.PSObject.Properties.Name -contains 'pricePattern') { [string]$site.pricePattern } else { '' }
+
+            if ($url -notmatch '^https://') { Write-Warning "Produit '$($product.id)'/$siteId : URL non HTTPS ignoree."; $failed++; continue }
+            if ([string]::IsNullOrWhiteSpace($pattern)) { Write-Warning "Produit '$($product.id)'/$siteId : pricePattern manquant."; $failed++; continue }
+
+            try {
+                $resp = Invoke-WebRequest -Uri $url -TimeoutSec $TimeoutSec -MaximumRedirection 3 `
+                    -Headers @{ 'User-Agent' = 'PromoAggregator/1.0 (+price-watch)' }
+                $price = ConvertFrom-ScrapedPrice -Html ([string]$resp.Content) -Pattern $pattern
+            } catch {
+                Write-Warning "Produit '$($product.id)'/$siteId : page injoignable -> $($_.Exception.Message)"
+                $failed++
+                continue
+            }
+            if ($null -eq $price) { Write-Warning "Produit '$($product.id)'/$siteId : prix introuvable sur la page."; $failed++; continue }
+
+            $checked++
+            $key = "$($product.id)|$siteId"
+            $entry = @($history.entries) | Where-Object { $_.key -eq $key } | Select-Object -First 1
+            $old = if ($entry -and ($entry.PSObject.Properties.Name -contains 'lastPrice')) { [decimal]$entry.lastPrice } else { $null }
+
+            $cmp = Compare-PriceChange -OldPrice $old -NewPrice $price -ThresholdPercent $threshold
+
+            if ($null -eq $entry) {
+                $entry = [pscustomobject]@{
+                    key = $key; productId = [string]$product.id; productName = [string]$product.name
+                    site = $siteId; url = $url; lastPrice = $price; currency = 'EUR'
+                    lastChecked = $stamp; history = @()
+                }
+                $history.entries = @(@($history.entries) + $entry)
+            } else {
+                $entry | Add-Member -NotePropertyName lastPrice -NotePropertyValue $price -Force
+                $entry | Add-Member -NotePropertyName lastChecked -NotePropertyValue $stamp -Force
+                $entry | Add-Member -NotePropertyName url -NotePropertyValue $url -Force
+            }
+            if (-not ($entry.PSObject.Properties.Name -contains 'history') -or $null -eq $entry.history) {
+                $entry | Add-Member -NotePropertyName history -NotePropertyValue @() -Force
+            }
+            $entry.history = @(@($entry.history) + [pscustomobject]@{ date = $stamp; price = $price } | Select-Object -Last 60)
+
+            if ($cmp.Changed) {
+                $alerts.Add([pscustomobject]@{
+                    ProductId = [string]$product.id; ProductName = [string]$product.name
+                    Site = $siteId; Url = $url; OldPrice = $old; NewPrice = $price
+                    Direction = $cmp.Direction; Percent = $cmp.Percent; Date = $stamp
+                })
+            }
+        }
+    }
+
+    if ($PSCmdlet.ShouldProcess($HistoryPath, 'Enregistrer l''historique des prix')) {
+        Save-PriceHistory -History $history -Path $HistoryPath
+    }
+
+    $notified = 0
+    if (-not $NoAlert) {
+        foreach ($a in $alerts) { Send-PriceAlert -Alert $a -Config $Config; $notified++ }
+    }
+
+    return [pscustomobject]@{
+        Checked       = $checked
+        Alerts        = $alerts.ToArray()
+        Failed        = $failed
+        Notifications = $notified
+    }
+}
+
 Export-ModuleMember -Function @(
     'Get-PromoConfig', 'Get-PromoCatalogPath', 'Get-PromoCatalog', 'Save-PromoCatalog',
     'Test-PromoCodeActive', 'Test-SiteMatchesCountry', 'Test-CountryCode', 'ConvertTo-PromoDate',
     'Find-PromoCode', 'Add-PromoSite', 'Add-PromoCode', 'Set-PromoCode', 'Remove-PromoCode',
     'Get-PromoSources', 'Merge-PromoCatalog', 'Update-PromoCatalog',
-    'Get-PromoScrapers', 'ConvertFrom-ScrapedHtml', 'Invoke-PromoScraper', 'Add-PromoScraper'
+    'Get-PromoScrapers', 'ConvertFrom-ScrapedHtml', 'Invoke-PromoScraper', 'Add-PromoScraper',
+    'ConvertTo-Price', 'ConvertFrom-ScrapedPrice', 'Compare-PriceChange',
+    'Get-PromoProducts', 'Get-PriceHistory', 'Save-PriceHistory', 'Update-PriceWatch', 'Send-PriceAlert'
 )

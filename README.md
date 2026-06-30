@@ -1,6 +1,31 @@
 # PromoAggregator
 
-Agrégateur de **codes promo multi-sites** en PowerShell. Il ne propose **que des codes valides**, filtre par **pays** (monde entier, pays précis, ou régions à accès restreint comme la **Chine**), et affiche les **meilleures offres** lorsqu'un site n'a aucun code promo valide. Le catalogue est un simple fichier JSON **que tu modifies et enrichis quand tu veux**.
+Agrégateur de **codes promo** et **suivi de prix avec alertes** en PowerShell. Périmètre actuel : **Amazon, Fnac, Carrefour**.
+
+- **Codes promo** (Amazon, Fnac) : ne propose **que des codes valides**, filtre par pays, affiche les meilleures offres en repli. Catalogue JSON **éditable**.
+- **Suivi de prix** (PS5 Pro & Slim sur Amazon, Fnac, Carrefour) : relève le prix, détecte **baisses et hausses**, et **t'alerte directement** (console, fichier d'alertes, webhook Discord/Slack et notification Windows si configurés).
+
+## Lancer le script (PowerShell 7)
+
+Le projet requiert **PowerShell 7** (`pwsh`), pas le « Windows PowerShell 5.1 » bleu. Vérifie/installe :
+
+```powershell
+pwsh --version            # doit afficher 7.x
+winget install Microsoft.PowerShell   # si besoin (Windows)
+```
+
+Depuis le dossier du projet, dans un terminal **pwsh** :
+
+```powershell
+pwsh ./promo.ps1                 # rechercher des codes promo (mode interactif)
+pwsh ./promo.ps1 -List           # lister les sites
+pwsh ./Watch-Prices.ps1 -NoAlert # 1er lancement : enregistre les prix de reference
+pwsh ./Watch-Prices.ps1          # lancements suivants : alerte si le prix bouge
+pwsh ./Update-Promos.ps1 -Force  # rafraichir les codes promo
+pwsh ./tests/Invoke-Checks.ps1   # lancer les tests
+```
+
+> Sous Windows tu peux aussi double-cliquer un raccourci `pwsh -File Watch-Prices.ps1`, ou planifier la tâche (voir plus bas).
 
 ## Pourquoi cette architecture (orientée données)
 
@@ -20,9 +45,12 @@ src/PromoAggregator.psm1        Module : logique métier (validation, filtres, g
 data/promo-codes.json           CATALOGUE ÉDITABLE — tes sites, codes et offres
 config/settings.json            Réglages (pays par défaut, régions restreintes)
 config/sources.json             Flux JSON de mise à jour (à activer/ajouter)
-config/scrapers.json            Sites à scraper par nom (Amazon, etc.)
-Update-Promos.ps1               Mise à jour manuelle/planifiée (récup + fusion)
-.github/workflows/              Planification cron tous les 3 jours
+config/scrapers.json            Sites à scraper par nom (Amazon, Fnac)
+config/products.json            Produits suivis pour le prix (PS5 Pro/Slim)
+data/price-history.json         Historique des prix (référence des alertes)
+Update-Promos.ps1               Rafraîchit les codes promo (récup + fusion)
+Watch-Prices.ps1                Relève les prix et déclenche les alertes
+.github/workflows/              Cron : codes promo (3 j) + prix (quotidien)
 tests/PromoAggregator.Tests.ps1 Suite de tests Pester
 tests/Invoke-Checks.ps1         Vérificateur sans dépendance (si Pester indisponible)
 ```
@@ -166,6 +194,49 @@ Puis `pwsh ./Update-Promos.ps1 -Force` (ou attends le cycle de 3 jours).
 
 > ⚠️ **À savoir** : respecte les CGU et le `robots.txt` de chaque site. Les pages des grands sites sont souvent dynamiques (JavaScript) — `url` doit pointer vers une page qui contient réellement les codes en HTML, et `codePattern` doit être **ajusté à la structure de cette page** pour extraire de vrais codes. Le moteur est générique et sûr ; l'ajustement du motif est ce qui rend l'extraction efficace pour un site donné. Dis-moi le site et la page, je calibre le motif.
 
+## Suivi de prix et alertes (PS5 Pro & Slim)
+
+Les produits suivis sont décrits dans **`config/products.json`** (PS5 Pro et Slim, sur **Amazon, Fnac, Carrefour**). À chaque relevé, le prix est comparé au dernier prix connu (`data/price-history.json`) et **toute variation déclenche une alerte** — baisse comme hausse.
+
+```jsonc
+{
+  "id": "ps5-pro",
+  "name": "PlayStation 5 Pro",
+  "alertThresholdPercent": 0,            // 0 = alerte à la moindre variation
+  "sites": [
+    { "site": "amazon-fr", "url": "https://www.amazon.fr/dp/...",
+      "pricePattern": "\"price\"\\s*:\\s*\"?(?<price>[0-9]+(?:[.,][0-9]{2})?)", "enabled": true }
+  ]
+}
+```
+
+**Mise en route :**
+
+1. Remplace chaque `url` `REMPLACER-...` par la **vraie page produit** (Amazon/Fnac/Carrefour) et vérifie le `pricePattern`.
+2. Premier lancement pour enregistrer les prix de référence (sans alerte) :
+   ```powershell
+   pwsh ./Watch-Prices.ps1 -NoAlert
+   ```
+3. Ensuite, à chaque lancement, tu es alerté si le prix bouge :
+   ```powershell
+   pwsh ./Watch-Prices.ps1
+   ```
+
+**Comment tu es alerté (« directement ») :**
+
+| Canal | Activation |
+|-------|------------|
+| Console (vert = baisse, rouge = hausse) | toujours |
+| Fichier `data/alerts.json` | toujours |
+| Webhook Discord/Slack | renseigne `alertWebhookUrl` (HTTPS) dans `config/settings.json`, ou la variable d'env `PROMO_ALERT_WEBHOOK` |
+| Notification Windows (toast) | installe le module `BurntToast` (`Install-Module BurntToast`) |
+
+**Automatisation :**
+- En local (Windows) : planifie une tâche qui exécute `pwsh -File Watch-Prices.ps1` (ex. toutes les heures) via le Planificateur de tâches.
+- Sur GitHub : `.github/workflows/watch-prices.yml` relève les prix **chaque jour** ; ajoute un secret de dépôt `PROMO_ALERT_WEBHOOK` pour recevoir les alertes.
+
+> ⚠️ Les pages des grands sites sont souvent dynamiques (JavaScript) : pour extraire un prix fiable, `url` doit pointer vers une page qui contient le prix dans le HTML (la fiche produit fonctionne souvent via ses données structurées JSON-LD), et `pricePattern` doit correspondre. Donne-moi les URLs exactes des fiches PS5 et je calibre les motifs.
+
 ## Tests
 
 ```bash
@@ -186,3 +257,4 @@ pwsh -c "Invoke-Pester ./tests/PromoAggregator.Tests.ps1"
 - Lectures de fichiers via `-LiteralPath` (pas d'interprétation de jokers).
 - **Mise à jour réseau confinée** à `Update-PromoCatalog` / `Invoke-PromoScraper` : **HTTPS uniquement** (autres schémas refusés), redirections limitées, délai d'attente, et **données externes traitées comme non fiables** — validées par le schéma avant fusion. Aucune donnée distante n'est exécutée.
 - **Scraping sûr** : le HTML est traité comme du **texte** (extraction par regex, jamais d'exécution), la regex a un **délai d'expiration** (anti-ReDoS), les codes sont filtrés par liste blanche de format et plafonnés (`maxCodes`). Une page injoignable ou bloquée n'ajoute **aucun** code et n'interrompt pas la mise à jour.
+- **Prix/alertes** : relevé via HTTPS uniquement, extraction par regex à délai d'expiration, webhook d'alerte **HTTPS uniquement**. Une page sans prix ou injoignable est ignorée sans interrompre le suivi ; le webhook et la notification toast sont best-effort (une panne n'arrête rien).
