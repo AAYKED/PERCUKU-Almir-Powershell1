@@ -1,0 +1,150 @@
+{
+  "schemaVersion": "1.0",
+  "_comment": "Catalogue editable. Ajoute/modifie des sites, des codes et des offres ici. Les dates sont au format AAAA-MM-JJ. Un code n'est propose que si 'active' = true ET si la date du jour est comprise entre validFrom et validUntil.",
+  "sites": [
+    {
+      "id": "amazon-fr",
+      "name": "Amazon France",
+      "url": "https://www.amazon.fr",
+      "countries": ["FR", "BE", "LU", "MC"],
+      "categories": ["electronique", "livres", "maison", "general"],
+      "codes": [
+        {
+          "code": "TECH10",
+          "description": "10% sur l'electronique des le premier achat",
+          "discount": "-10%",
+          "validFrom": "2026-01-01",
+          "validUntil": "2026-12-31",
+          "minPurchase": 50,
+          "categories": ["electronique"],
+          "active": true
+        },
+        {
+          "code": "LIVRE5",
+          "description": "5 EUR offerts sur les livres",
+          "discount": "-5 EUR",
+          "validFrom": "2026-06-01",
+          "validUntil": "2026-07-15",
+          "minPurchase": 25,
+          "categories": ["livres"],
+          "active": true
+        },
+        {
+          "code": "EXPIRE2025",
+          "description": "Ancien code (doit etre filtre car expire)",
+          "discount": "-20%",
+          "validFrom": "2025-01-01",
+          "validUntil": "2025-12-31",
+          "minPurchase": 0,
+          "categories": ["general"],
+          "active": true
+        }
+      ],
+      "offers": [
+        {
+          "title": "Soldes d'ete jusqu'a -50%",
+          "description": "Selection de produits high-tech en promotion.",
+          "url": "https://www.amazon.fr/deals",
+          "validUntil": "2026-08-31"
+        }
+      ]
+    },
+    {
+      "id": "cdiscount",
+      "name": "Cdiscount",
+      "url": "https://www.cdiscount.com",
+      "countries": ["FR"],
+      "categories": ["electronique", "electromenager", "general"],
+      "codes": [
+        {
+          "code": "CDAV15",
+          "description": "15 EUR de remise des 99 EUR d'achat",
+          "discount": "-15 EUR",
+          "validFrom": "2026-06-01",
+          "validUntil": "2026-09-30",
+          "minPurchase": 99,
+          "categories": ["general"],
+          "active": true
+        }
+      ],
+      "offers": [
+        {
+          "title": "French Days - offres flash",
+          "description": "Promotions limitees dans le temps sur l'electromenager.",
+          "url": "https://www.cdiscount.com/promotions",
+          "validUntil": "2026-10-01"
+        }
+      ]
+    },
+    {
+      "id": "taobao",
+      "name": "Taobao (Chine)",
+      "url": "https://www.taobao.com",
+      "countries": ["CN"],
+      "categories": ["mode", "electronique", "general"],
+      "codes": [
+        {
+          "code": "TAO618",
+          "description": "Promotion 618 - reduction sur toute la mode",
+          "discount": "-20%",
+          "validFrom": "2026-06-01",
+          "validUntil": "2026-06-30",
+          "minPurchase": 0,
+          "categories": ["mode"],
+          "active": true
+        }
+      ],
+      "offers": [
+        {
+          "title": "Festival 11.11 (Singles' Day)",
+          "description": "Le plus grand evenement shopping de Chine, remises massives.",
+          "url": "https://www.taobao.com",
+          "validUntil": "2026-11-12"
+        }
+      ]
+    },
+    {
+      "id": "jd",
+      "name": "JD.com (Chine)",
+      "url": "https://www.jd.com",
+      "countries": ["CN"],
+      "categories": ["electronique", "general"],
+      "codes": [],
+      "offers": [
+        {
+          "title": "JD 618 Grand Festival",
+          "description": "Coupons empilables et livraison rapide sur l'electronique.",
+          "url": "https://www.jd.com",
+          "validUntil": "2026-06-30"
+        }
+      ]
+    },
+    {
+      "id": "aliexpress",
+      "name": "AliExpress",
+      "url": "https://www.aliexpress.com",
+      "countries": ["CN", "FR", "US", "ALL"],
+      "categories": ["electronique", "mode", "general"],
+      "codes": [
+        {
+          "code": "ALI3OFF",
+          "description": "3 USD de remise des 30 USD",
+          "discount": "-3 USD",
+          "validFrom": "2026-01-01",
+          "validUntil": "2026-12-31",
+          "minPurchase": 30,
+          "categories": ["general"],
+          "active": true
+        }
+      ],
+      "offers": [
+        {
+          "title": "Anniversaire AliExpress",
+          "description": "Ventes flash mondiales et coupons cumulables.",
+          "url": "https://www.aliexpress.com",
+          "validUntil": "2026-12-31"
+        }
+      ]
+    }
+  ]
+}

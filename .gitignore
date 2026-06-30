@@ -1,0 +1,9 @@
+# Fichiers temporaires d'ecriture atomique du catalogue
+*.tmp
+
+# PowerShell / modules locaux
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
