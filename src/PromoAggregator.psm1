@@ -546,8 +546,192 @@ function Remove-PromoCode {
     Save-PromoCatalog -Catalog $catalog -Path $Path
 }
 
+# ---------------------------------------------------------------------------
+# Mise a jour automatique depuis des sources (flux JSON HTTPS)
+# ---------------------------------------------------------------------------
+
+function Get-PromoSources {
+    <#
+    .SYNOPSIS Charge la liste des sources de mise a jour (config/sources.json).
+    .OUTPUTS Un tableau d'objets { id, url, enabled, description }.
+    #>
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param([string]$Path)
+
+    if (-not $Path) { $Path = Join-Path $script:ModuleRoot 'config/sources.json' }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Verbose "Aucun fichier de sources a '$Path'."
+        return @()
+    }
+    try {
+        $raw = Get-Content -LiteralPath $Path -Raw -Encoding utf8
+        $obj = $raw | ConvertFrom-Json -Depth 10
+    } catch {
+        throw "Fichier de sources illisible '$Path' : $($_.Exception.Message)"
+    }
+    if ($obj.PSObject.Properties.Name -contains 'sources' -and $null -ne $obj.sources) {
+        return @($obj.sources)
+    }
+    return @()
+}
+
+function Merge-PromoCatalog {
+    <#
+    .SYNOPSIS Fusionne des donnees source (deja parsees) dans un catalogue, en place.
+    .DESCRIPTION
+        Fonction pure (sans reseau, testable) : valide la source, ajoute les nouveaux
+        sites/codes/offres, met a jour les codes existants (par 'code'), et horodate
+        chaque code touche via 'lastChecked'. Le dedoublonnage se fait par identifiant
+        de code (par site) et par titre d'offre.
+    .OUTPUTS [pscustomobject] { Added; Updated }.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]$Catalog,
+        [Parameter(Mandatory)]$Source,
+        [datetime]$Today = (Get-Date).Date
+    )
+
+    Assert-CatalogSchema -Catalog $Source
+    $stamp = $Today.ToString('yyyy-MM-dd')
+    $added = 0
+    $updated = 0
+    $updatableFields = 'description', 'discount', 'validFrom', 'validUntil', 'minPurchase', 'active', 'categories'
+
+    foreach ($srcSite in @($Source.sites)) {
+        $site = @($Catalog.sites) | Where-Object { $_.id -eq $srcSite.id } | Select-Object -First 1
+
+        if ($null -eq $site) {
+            # Nouveau site : on horodate ses codes puis on l'ajoute tel quel.
+            if ($srcSite.PSObject.Properties.Name -contains 'codes' -and $null -ne $srcSite.codes) {
+                foreach ($c in @($srcSite.codes)) {
+                    $c | Add-Member -NotePropertyName lastChecked -NotePropertyValue $stamp -Force
+                }
+                $added += @($srcSite.codes).Count
+            }
+            $Catalog.sites = @($Catalog.sites) + $srcSite
+            continue
+        }
+
+        if (-not ($site.PSObject.Properties.Name -contains 'codes') -or $null -eq $site.codes) {
+            $site | Add-Member -NotePropertyName codes -NotePropertyValue @() -Force
+        }
+
+        $srcCodes = if ($srcSite.PSObject.Properties.Name -contains 'codes' -and $null -ne $srcSite.codes) { @($srcSite.codes) } else { @() }
+        foreach ($sc in $srcCodes) {
+            $existing = @($site.codes) | Where-Object { $_.code -eq $sc.code } | Select-Object -First 1
+            if ($null -ne $existing) {
+                foreach ($f in $updatableFields) {
+                    if ($sc.PSObject.Properties.Name -contains $f) {
+                        $existing | Add-Member -NotePropertyName $f -NotePropertyValue $sc.$f -Force
+                    }
+                }
+                $existing | Add-Member -NotePropertyName lastChecked -NotePropertyValue $stamp -Force
+                $updated++
+            } else {
+                $sc | Add-Member -NotePropertyName lastChecked -NotePropertyValue $stamp -Force
+                $site.codes = @($site.codes) + $sc
+                $added++
+            }
+        }
+
+        # Fusion des offres par titre (sans doublon).
+        if ($srcSite.PSObject.Properties.Name -contains 'offers' -and $null -ne $srcSite.offers) {
+            if (-not ($site.PSObject.Properties.Name -contains 'offers') -or $null -eq $site.offers) {
+                $site | Add-Member -NotePropertyName offers -NotePropertyValue @() -Force
+            }
+            foreach ($so in @($srcSite.offers)) {
+                $existingOffer = @($site.offers) | Where-Object { $_.title -eq $so.title } | Select-Object -First 1
+                if ($null -eq $existingOffer) {
+                    $site.offers = @($site.offers) + $so
+                    $added++
+                }
+            }
+        }
+    }
+
+    return [pscustomobject]@{ Added = $added; Updated = $updated }
+}
+
+function Update-PromoCatalog {
+    <#
+    .SYNOPSIS Recupere les sources (HTTPS), les fusionne dans le catalogue et sauvegarde.
+    .DESCRIPTION
+        Pour chaque source activee de config/sources.json : telecharge le flux JSON
+        (HTTPS uniquement), le valide (schema), puis le fusionne. Les sources
+        injoignables ou invalides sont ignorees sans interrompre la mise a jour.
+        Enregistre la date du jour dans 'lastUpdated' a la racine du catalogue.
+    .OUTPUTS [pscustomobject] { Added; Updated; Sources; Failed; LastUpdated }.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([pscustomobject])]
+    param(
+        [string]$CatalogPath,
+        [string]$SourcesPath,
+        [int]$TimeoutSec = 20
+    )
+
+    if (-not $CatalogPath) { $CatalogPath = Get-PromoCatalogPath }
+    if (-not $SourcesPath) { $SourcesPath = Join-Path $script:ModuleRoot 'config/sources.json' }
+
+    $catalog = Get-PromoCatalog -Path $CatalogPath
+    $sources = Get-PromoSources -Path $SourcesPath
+    $today = (Get-Date).Date
+    $added = 0; $updated = 0; $okSources = 0; $failed = 0
+
+    foreach ($src in $sources) {
+        if ($src.PSObject.Properties.Name -contains 'enabled' -and -not $src.enabled) { continue }
+
+        $url = if ($src.PSObject.Properties.Name -contains 'url') { [string]$src.url } else { '' }
+        # Securite : HTTPS uniquement, pas d'autre schema (file://, http://, etc.).
+        if ($url -notmatch '^https://') {
+            Write-Warning "Source ignoree (HTTPS obligatoire) : '$url'"
+            $failed++
+            continue
+        }
+
+        try {
+            $data = Invoke-RestMethod -Uri $url -TimeoutSec $TimeoutSec -MaximumRedirection 2 `
+                -Headers @{ 'User-Agent' = 'PromoAggregator/1.0 (+catalog-updater)' }
+        } catch {
+            Write-Warning "Source injoignable : '$url' -> $($_.Exception.Message)"
+            $failed++
+            continue
+        }
+
+        try {
+            # Donnees externes = non fiables : validees par le schema avant fusion.
+            $res = Merge-PromoCatalog -Catalog $catalog -Source $data -Today $today
+            $added += $res.Added
+            $updated += $res.Updated
+            $okSources++
+        } catch {
+            Write-Warning "Source invalide : '$url' -> $($_.Exception.Message)"
+            $failed++
+            continue
+        }
+    }
+
+    $catalog | Add-Member -NotePropertyName lastUpdated -NotePropertyValue $today.ToString('yyyy-MM-dd') -Force
+
+    if ($PSCmdlet.ShouldProcess($CatalogPath, 'Enregistrer le catalogue mis a jour')) {
+        Save-PromoCatalog -Catalog $catalog -Path $CatalogPath
+    }
+
+    return [pscustomobject]@{
+        Added       = $added
+        Updated     = $updated
+        Sources     = $okSources
+        Failed      = $failed
+        LastUpdated = $today.ToString('yyyy-MM-dd')
+    }
+}
+
 Export-ModuleMember -Function @(
     'Get-PromoConfig', 'Get-PromoCatalogPath', 'Get-PromoCatalog', 'Save-PromoCatalog',
     'Test-PromoCodeActive', 'Test-SiteMatchesCountry', 'Test-CountryCode', 'ConvertTo-PromoDate',
-    'Find-PromoCode', 'Add-PromoSite', 'Add-PromoCode', 'Set-PromoCode', 'Remove-PromoCode'
+    'Find-PromoCode', 'Add-PromoSite', 'Add-PromoCode', 'Set-PromoCode', 'Remove-PromoCode',
+    'Get-PromoSources', 'Merge-PromoCatalog', 'Update-PromoCatalog'
 )

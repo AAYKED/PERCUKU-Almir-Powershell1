@@ -123,6 +123,40 @@ try {
     CheckThrows 'doublon refuse'        { Add-PromoCode -SiteId 'shop-fr' -Code 'OK10' -Path $tmp }
     CheckThrows 'site inconnu refuse'   { Add-PromoCode -SiteId 'inconnu' -Code 'ZZZ' -Path $tmp }
 
+    Write-Host "`nMise a jour : fusion des sources (Merge-PromoCatalog)" -ForegroundColor Cyan
+    Check 'ajoute un nouveau code avec lastChecked' {
+        $cat = Get-PromoCatalog -Path $tmp
+        $source = @{ schemaVersion = '1.0'; sites = @(@{ id = 'shop-fr'; name = 'Shop FR'; countries = @('FR'); codes = @(@{ code = 'FRESH'; discount = '-30%'; validFrom = '2026-01-01'; validUntil = '2026-12-31'; active = $true }) }) } | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        $r = Merge-PromoCatalog -Catalog $cat -Source $source -Today ([datetime]'2026-06-30')
+        $new = ($cat.sites | Where-Object id -eq 'shop-fr').codes | Where-Object code -eq 'FRESH'
+        ($r.Added -ge 1) -and ($null -ne $new) -and ($new.lastChecked -eq '2026-06-30')
+    }
+    Check 'met a jour un code existant' {
+        $cat = Get-PromoCatalog -Path $tmp
+        $source = @{ schemaVersion = '1.0'; sites = @(@{ id = 'shop-fr'; name = 'Shop FR'; countries = @('FR'); codes = @(@{ code = 'OK10'; discount = '-99%'; validFrom = '2026-01-01'; validUntil = '2027-01-01'; active = $true }) }) } | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        $r = Merge-PromoCatalog -Catalog $cat -Source $source -Today ([datetime]'2026-06-30')
+        $upd = ($cat.sites | Where-Object id -eq 'shop-fr').codes | Where-Object code -eq 'OK10'
+        ($r.Updated -ge 1) -and ($upd.discount -eq '-99%') -and ($upd.validUntil -eq '2027-01-01')
+    }
+    Check 'ajoute un nouveau site' {
+        $cat = Get-PromoCatalog -Path $tmp
+        $source = @{ schemaVersion = '1.0'; sites = @(@{ id = 'shop-us'; name = 'Shop US'; countries = @('US'); codes = @(@{ code = 'USA5'; discount = '-5%'; active = $true }) }) } | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        Merge-PromoCatalog -Catalog $cat -Source $source -Today ([datetime]'2026-06-30') | Out-Null
+        $null -ne ($cat.sites | Where-Object id -eq 'shop-us')
+    }
+    Check 'ne duplique pas une offre existante' {
+        $cat = Get-PromoCatalog -Path $tmp
+        $before = @(($cat.sites | Where-Object id -eq 'shop-fr').offers).Count
+        $source = @{ schemaVersion = '1.0'; sites = @(@{ id = 'shop-fr'; name = 'Shop FR'; countries = @('FR'); offers = @(@{ title = 'Soldes'; description = 'doublon' }) }) } | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        Merge-PromoCatalog -Catalog $cat -Source $source -Today ([datetime]'2026-06-30') | Out-Null
+        @(($cat.sites | Where-Object id -eq 'shop-fr').offers).Count -eq $before
+    }
+    Check 'sources HTTPS only (config exemple)' {
+        $sources = Get-PromoSources -Path (Join-Path $Root 'config/sources.json')
+        # La source d'exemple est desactivee : aucune source active par defaut.
+        @($sources | Where-Object { $_.enabled }).Count -eq 0
+    }
+
     Write-Host "`nValidation du catalogue livre (data/promo-codes.json)" -ForegroundColor Cyan
     Check 'catalogue principal valide'  { $null -ne (Get-PromoCatalog) }
 }

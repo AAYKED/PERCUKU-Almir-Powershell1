@@ -146,3 +146,38 @@ Describe 'Gestion du catalogue (ecriture)' {
         { Add-PromoCode -SiteId 'inconnu' -Code 'ZZZ' -Path $script:TmpCatalog } | Should -Throw
     }
 }
+
+Describe 'Merge-PromoCatalog (mise a jour)' {
+    BeforeEach {
+        $script:Cat = Get-PromoCatalog -Path $script:TmpCatalog
+        $script:Day = [datetime]'2026-06-30'
+    }
+    It 'ajoute un nouveau code et l''horodate' {
+        $src = @{ schemaVersion = '1.0'; sites = @(@{ id = 'shop-fr'; name = 'Shop FR'; countries = @('FR'); codes = @(@{ code = 'FRESH'; discount = '-30%'; validFrom = '2026-01-01'; validUntil = '2026-12-31'; active = $true }) }) } | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        $r = Merge-PromoCatalog -Catalog $script:Cat -Source $src -Today $script:Day
+        $r.Added | Should -BeGreaterThan 0
+        $code = ($script:Cat.sites | Where-Object id -eq 'shop-fr').codes | Where-Object code -eq 'FRESH'
+        $code.lastChecked | Should -Be '2026-06-30'
+    }
+    It 'met a jour un code existant' {
+        $src = @{ schemaVersion = '1.0'; sites = @(@{ id = 'shop-fr'; name = 'Shop FR'; countries = @('FR'); codes = @(@{ code = 'OK10'; discount = '-99%'; validUntil = '2027-01-01'; active = $true }) }) } | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        $r = Merge-PromoCatalog -Catalog $script:Cat -Source $src -Today $script:Day
+        $r.Updated | Should -BeGreaterThan 0
+        (($script:Cat.sites | Where-Object id -eq 'shop-fr').codes | Where-Object code -eq 'OK10').discount | Should -Be '-99%'
+    }
+    It 'ajoute un nouveau site' {
+        $src = @{ schemaVersion = '1.0'; sites = @(@{ id = 'shop-us'; name = 'Shop US'; countries = @('US'); codes = @(@{ code = 'USA5'; active = $true }) }) } | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        Merge-PromoCatalog -Catalog $script:Cat -Source $src -Today $script:Day | Out-Null
+        ($script:Cat.sites | Where-Object id -eq 'shop-us') | Should -Not -BeNullOrEmpty
+    }
+    It 'ne duplique pas une offre existante' {
+        $before = @(($script:Cat.sites | Where-Object id -eq 'shop-fr').offers).Count
+        $src = @{ schemaVersion = '1.0'; sites = @(@{ id = 'shop-fr'; name = 'Shop FR'; countries = @('FR'); offers = @(@{ title = 'Soldes'; description = 'doublon' }) }) } | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        Merge-PromoCatalog -Catalog $script:Cat -Source $src -Today $script:Day | Out-Null
+        @(($script:Cat.sites | Where-Object id -eq 'shop-fr').offers).Count | Should -Be $before
+    }
+    It 'rejette une source au schema invalide' {
+        $bad = @{ sites = @(@{ name = 'sans id'; countries = @('FR') }) } | ConvertTo-Json -Depth 20 | ConvertFrom-Json
+        { Merge-PromoCatalog -Catalog $script:Cat -Source $bad -Today $script:Day } | Should -Throw
+    }
+}

@@ -103,6 +103,33 @@ Set-PromoCode -SiteId 'fnac' -Code 'NOEL15' -ValidUntil '2027-01-15'
 Remove-PromoCode -SiteId 'fnac' -Code 'NOEL15'
 ```
 
+## Mise à jour automatique (tous les 3 jours)
+
+Le catalogue peut se **rafraîchir automatiquement** pour récupérer de nouveaux codes.
+
+1. Déclare tes **sources** dans `config/sources.json` (flux JSON en **HTTPS**, au même format que `data/promo-codes.json`). Mets `enabled: true` et l'URL :
+
+   ```json
+   {
+     "sources": [
+       { "id": "mon-flux", "url": "https://mon-domaine.com/promos.json", "enabled": true }
+     ]
+   }
+   ```
+
+2. La récupération + fusion tourne **tous les 3 jours** via GitHub Actions (`.github/workflows/update-promos.yml`) : nouveaux codes ajoutés, codes existants mis à jour, chaque code touché horodaté (`lastChecked`), puis commit automatique si changement.
+
+3. Manuellement quand tu veux :
+
+   ```bash
+   pwsh ./Update-Promos.ps1          # respecte l'intervalle de 3 jours
+   pwsh ./Update-Promos.ps1 -Force   # force tout de suite
+   ```
+
+La fusion (`Merge-PromoCatalog`) **dédoublonne** par identifiant de code (par site) et par titre d'offre : relancer la mise à jour ne crée pas de doublons. Les sources injoignables ou invalides sont ignorées sans bloquer les autres.
+
+> Note : il n'existe pas de scraper universel fiable pour « tous les sites du monde ». L'approche par flux configurables est volontaire (robuste, légale, sûre). Si tu veux un scraper dédié pour un site précis et nommé, il suffit d'écrire un petit *provider* qui renvoie le format catalogue, puis de l'appeler dans la mise à jour — le reste du moteur ne change pas.
+
 ## Tests
 
 ```bash
@@ -121,7 +148,4 @@ pwsh -c "Invoke-Pester ./tests/PromoAggregator.Tests.ps1"
 - **Validation du schéma** du catalogue à chaque chargement avant toute opération.
 - **Écriture atomique** du catalogue (fichier temporaire + remplacement) en **UTF-8 sans BOM** (compatibilité des caractères chinois).
 - Lectures de fichiers via `-LiteralPath` (pas d'interprétation de jokers).
-
-## Étendre vers une récupération automatique (optionnel)
-
-Le cœur reste séparé de la source des données. Pour ajouter plus tard une récupération automatique par site, écris une fonction « provider » qui retourne des objets au même format que `data/promo-codes.json`, valide-les avec `Assert-CatalogSchema`, puis fusionne-les dans le catalogue. Le moteur de validité, de filtrage pays et d'affichage reste inchangé.
+- **Mise à jour réseau confinée** à `Update-PromoCatalog` : **HTTPS uniquement** (autres schémas refusés), redirections limitées, délai d'attente, et **données externes traitées comme non fiables** — validées par le schéma avant fusion. Aucune donnée distante n'est exécutée.

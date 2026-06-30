@@ -6,8 +6,18 @@
       "id": "amazon-fr",
       "name": "Amazon France",
       "url": "https://www.amazon.fr",
-      "countries": ["FR", "BE", "LU", "MC"],
-      "categories": ["electronique", "livres", "maison", "general"],
+      "countries": [
+        "FR",
+        "BE",
+        "LU",
+        "MC"
+      ],
+      "categories": [
+        "electronique",
+        "livres",
+        "maison",
+        "general"
+      ],
       "codes": [
         {
           "code": "TECH10",
@@ -16,7 +26,9 @@
           "validFrom": "2026-01-01",
           "validUntil": "2026-12-31",
           "minPurchase": 50,
-          "categories": ["electronique"],
+          "categories": [
+            "electronique"
+          ],
           "active": true
         },
         {
@@ -26,7 +38,9 @@
           "validFrom": "2026-06-01",
           "validUntil": "2026-07-15",
           "minPurchase": 25,
-          "categories": ["livres"],
+          "categories": [
+            "livres"
+          ],
           "active": true
         },
         {
@@ -36,7 +50,9 @@
           "validFrom": "2025-01-01",
           "validUntil": "2025-12-31",
           "minPurchase": 0,
-          "categories": ["general"],
+          "categories": [
+            "general"
+          ],
           "active": true
         }
       ],
@@ -53,8 +69,14 @@
       "id": "cdiscount",
       "name": "Cdiscount",
       "url": "https://www.cdiscount.com",
-      "countries": ["FR"],
-      "categories": ["electronique", "electromenager", "general"],
+      "countries": [
+        "FR"
+      ],
+      "categories": [
+        "electronique",
+        "electromenager",
+        "general"
+      ],
       "codes": [
         {
           "code": "CDAV15",
@@ -63,7 +85,9 @@
           "validFrom": "2026-06-01",
           "validUntil": "2026-09-30",
           "minPurchase": 99,
-          "categories": ["general"],
+          "categories": [
+            "general"
+          ],
           "active": true
         }
       ],
@@ -80,8 +104,14 @@
       "id": "taobao",
       "name": "Taobao (Chine)",
       "url": "https://www.taobao.com",
-      "countries": ["CN"],
-      "categories": ["mode", "electronique", "general"],
+      "countries": [
+        "CN"
+      ],
+      "categories": [
+        "mode",
+        "electronique",
+        "general"
+      ],
       "codes": [
         {
           "code": "TAO618",
@@ -90,7 +120,9 @@
           "validFrom": "2026-06-01",
           "validUntil": "2026-06-30",
           "minPurchase": 0,
-          "categories": ["mode"],
+          "categories": [
+            "mode"
+          ],
           "active": true
         }
       ],
@@ -107,8 +139,13 @@
       "id": "jd",
       "name": "JD.com (Chine)",
       "url": "https://www.jd.com",
-      "countries": ["CN"],
-      "categories": ["electronique", "general"],
+      "countries": [
+        "CN"
+      ],
+      "categories": [
+        "electronique",
+        "general"
+      ],
       "codes": [],
       "offers": [
         {
@@ -123,8 +160,17 @@
       "id": "aliexpress",
       "name": "AliExpress",
       "url": "https://www.aliexpress.com",
-      "countries": ["CN", "FR", "US", "ALL"],
-      "categories": ["electronique", "mode", "general"],
+      "countries": [
+        "CN",
+        "FR",
+        "US",
+        "ALL"
+      ],
+      "categories": [
+        "electronique",
+        "mode",
+        "general"
+      ],
       "codes": [
         {
           "code": "ALI3OFF",
@@ -133,7 +179,9 @@
           "validFrom": "2026-01-01",
           "validUntil": "2026-12-31",
           "minPurchase": 30,
-          "categories": ["general"],
+          "categories": [
+            "general"
+          ],
           "active": true
         }
       ],
@@ -146,5 +194,6 @@
         }
       ]
     }
-  ]
+  ],
+  "lastUpdated": "2026-06-30"
 }
