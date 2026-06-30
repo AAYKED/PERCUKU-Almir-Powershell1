@@ -655,6 +655,214 @@ function Merge-PromoCatalog {
     return [pscustomobject]@{ Added = $added; Updated = $updated }
 }
 
+# ---------------------------------------------------------------------------
+# Scraping de sites nommes (Amazon, etc.)
+# ---------------------------------------------------------------------------
+
+function Get-PromoScrapers {
+    <#
+    .SYNOPSIS Charge les definitions de scraping (config/scrapers.json).
+    .OUTPUTS Un tableau d'objets scraper.
+    #>
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param([string]$Path)
+
+    if (-not $Path) { $Path = Join-Path $script:ModuleRoot 'config/scrapers.json' }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        Write-Verbose "Aucun fichier de scrapers a '$Path'."
+        return @()
+    }
+    try {
+        $raw = Get-Content -LiteralPath $Path -Raw -Encoding utf8
+        $obj = $raw | ConvertFrom-Json -Depth 10
+    } catch {
+        throw "Fichier de scrapers illisible '$Path' : $($_.Exception.Message)"
+    }
+    if ($obj.PSObject.Properties.Name -contains 'scrapers' -and $null -ne $obj.scrapers) {
+        return @($obj.scrapers)
+    }
+    return @()
+}
+
+function ConvertFrom-ScrapedHtml {
+    <#
+    .SYNOPSIS Extrait des codes promo d'un HTML selon une definition de scraper (fonction pure, testable).
+    .DESCRIPTION
+        Applique le motif regex 'codePattern' (groupe nomme obligatoire 'code', groupes
+        optionnels 'description' et 'discount') sur le HTML, filtre/dedoublonne les codes,
+        et renvoie un objet site au format catalogue. Les codes scrapes recoivent une
+        validite glissante (validFrom = aujourd'hui, validUntil = aujourd'hui + N jours)
+        afin que les codes disparus expirent d'eux-memes a la prochaine mise a jour.
+        Traitement purement textuel : aucune execution du contenu distant.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)][AllowEmptyString()][string]$Html,
+        [Parameter(Mandatory)]$Scraper,
+        [datetime]$Today = (Get-Date).Date
+    )
+
+    foreach ($req in 'id', 'name', 'countries', 'codePattern') {
+        if (-not ($Scraper.PSObject.Properties.Name -contains $req)) {
+            throw "Scraper invalide : champ obligatoire '$req' manquant."
+        }
+    }
+    foreach ($c in @($Scraper.countries)) {
+        if (-not (Test-CountryCode -Country ([string]$c))) {
+            throw "Scraper '$($Scraper.id)' : code pays invalide '$c'."
+        }
+    }
+
+    $maxCodes = if ($Scraper.PSObject.Properties.Name -contains 'maxCodes' -and $Scraper.maxCodes) { [int]$Scraper.maxCodes } else { 50 }
+    $validity = if ($Scraper.PSObject.Properties.Name -contains 'defaultValidityDays' -and $Scraper.defaultValidityDays) { [int]$Scraper.defaultValidityDays } else { 30 }
+    $categories = if ($Scraper.PSObject.Properties.Name -contains 'categories' -and $null -ne $Scraper.categories) { @($Scraper.categories) } else { @() }
+    # Liste blanche du format d'un code valide (anti-bruit) : alphanumerique + tirets, 3 a 20 caracteres.
+    $allow = if ($Scraper.PSObject.Properties.Name -contains 'codeAllowPattern' -and $Scraper.codeAllowPattern) { [string]$Scraper.codeAllowPattern } else { '^[A-Za-z0-9][A-Za-z0-9\-]{2,19}$' }
+
+    $stamp = $Today.ToString('yyyy-MM-dd')
+    $until = $Today.AddDays($validity).ToString('yyyy-MM-dd')
+
+    $codes = [System.Collections.Generic.List[object]]::new()
+    $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+
+    if (-not [string]::IsNullOrEmpty($Html)) {
+        $regex = [regex]::new([string]$Scraper.codePattern,
+            ([System.Text.RegularExpressions.RegexOptions]::IgnoreCase -bor [System.Text.RegularExpressions.RegexOptions]::CultureInvariant),
+            [timespan]::FromSeconds(5))  # timeout regex : protege contre les motifs catastrophiques
+        try {
+            $matchList = $regex.Matches($Html)
+        } catch [System.Text.RegularExpressions.RegexMatchTimeoutException] {
+            throw "Scraper '$($Scraper.id)' : delai d'analyse regex depasse (motif trop couteux)."
+        }
+
+        foreach ($m in $matchList) {
+            if ($codes.Count -ge $maxCodes) { break }
+            if (-not $m.Groups['code'].Success) { continue }
+            $code = $m.Groups['code'].Value.Trim()
+            if ([string]::IsNullOrWhiteSpace($code)) { continue }
+            if ($code -notmatch $allow) { continue }
+            if (-not $seen.Add($code)) { continue }
+
+            $desc = if ($m.Groups['description'].Success) { $m.Groups['description'].Value.Trim() } else { "Code recupere automatiquement sur $($Scraper.name)" }
+            $disc = if ($m.Groups['discount'].Success) { $m.Groups['discount'].Value.Trim() } else { '' }
+
+            $codes.Add([pscustomobject]@{
+                code        = $code
+                description = $desc
+                discount    = $disc
+                validFrom   = $stamp
+                validUntil  = $until
+                minPurchase = 0
+                categories  = $categories
+                active      = $true
+                source      = 'scrape'
+                lastChecked = $stamp
+            })
+        }
+    }
+
+    return [pscustomobject]@{
+        id         = [string]$Scraper.id
+        name       = [string]$Scraper.name
+        url        = if ($Scraper.PSObject.Properties.Name -contains 'url') { [string]$Scraper.url } else { '' }
+        countries  = @($Scraper.countries)
+        categories = $categories
+        codes      = $codes.ToArray()
+        offers     = @()
+    }
+}
+
+function Invoke-PromoScraper {
+    <#
+    .SYNOPSIS Telecharge la page d'un scraper (HTTPS) et en extrait les codes.
+    .OUTPUTS Un objet site au format catalogue.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param(
+        [Parameter(Mandatory)]$Scraper,
+        [int]$TimeoutSec = 20,
+        [datetime]$Today = (Get-Date).Date
+    )
+
+    $url = if ($Scraper.PSObject.Properties.Name -contains 'url') { [string]$Scraper.url } else { '' }
+    if ($url -notmatch '^https://') {
+        throw "Scraper '$($Scraper.id)' : URL non HTTPS '$url' (HTTPS obligatoire)."
+    }
+
+    $resp = Invoke-WebRequest -Uri $url -TimeoutSec $TimeoutSec -MaximumRedirection 3 `
+        -Headers @{ 'User-Agent' = 'PromoAggregator/1.0 (+promo-scraper)' }
+    $html = [string]$resp.Content
+
+    return ConvertFrom-ScrapedHtml -Html $html -Scraper $Scraper -Today $Today
+}
+
+function Add-PromoScraper {
+    <#
+    .SYNOPSIS Ajoute (ou remplace) la definition de scraping d'un site nomme, puis sauvegarde.
+    .EXAMPLE
+        Add-PromoScraper -Id amazon-fr -Name 'Amazon France' -Url 'https://www.amazon.fr/promotions' `
+            -Countries FR -CodePattern '(?<code>[A-Z0-9]{6,12})'
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [Parameter(Mandatory)][string]$Name,
+        [Parameter(Mandatory)][string]$Url,
+        [Parameter(Mandatory)][string[]]$Countries,
+        [Parameter(Mandatory)][string]$CodePattern,
+        [string[]]$Categories = @('general'),
+        [int]$DefaultValidityDays = 30,
+        [int]$MaxCodes = 50,
+        [bool]$Enabled = $true,
+        [string]$Path
+    )
+
+    if ($Url -notmatch '^https://') { throw "URL non HTTPS '$Url' (HTTPS obligatoire)." }
+    foreach ($c in $Countries) {
+        if (-not (Test-CountryCode -Country $c)) { throw "Code pays invalide '$c'." }
+    }
+    # Valide le motif regex immediatement (leve si invalide).
+    [void][regex]::new($CodePattern)
+
+    if (-not $Path) { $Path = Join-Path $script:ModuleRoot 'config/scrapers.json' }
+
+    if (Test-Path -LiteralPath $Path) {
+        $raw = Get-Content -LiteralPath $Path -Raw -Encoding utf8
+        $doc = $raw | ConvertFrom-Json -Depth 10
+    } else {
+        $doc = [pscustomobject]@{ schemaVersion = '1.0'; scrapers = @() }
+    }
+    if (-not ($doc.PSObject.Properties.Name -contains 'scrapers') -or $null -eq $doc.scrapers) {
+        $doc | Add-Member -NotePropertyName scrapers -NotePropertyValue @() -Force
+    }
+
+    $entry = [pscustomobject]@{
+        id                  = $Id
+        name                = $Name
+        url                 = $Url
+        countries           = @($Countries | ForEach-Object { $_.ToUpperInvariant() })
+        categories          = @($Categories | ForEach-Object { $_.ToLowerInvariant() })
+        codePattern         = $CodePattern
+        defaultValidityDays = $DefaultValidityDays
+        maxCodes            = $MaxCodes
+        enabled             = $Enabled
+    }
+
+    $others = @($doc.scrapers | Where-Object { $_.id -ne $Id })
+    $doc.scrapers = @($others) + $entry
+
+    if ($PSCmdlet.ShouldProcess($Path, "Enregistrer le scraper '$Id'")) {
+        $json = $doc | ConvertTo-Json -Depth 20
+        $tmp = "$Path.tmp"
+        [System.IO.File]::WriteAllText($tmp, $json, [System.Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $tmp -Destination $Path -Force
+    }
+    return $entry
+}
+
 function Update-PromoCatalog {
     <#
     .SYNOPSIS Recupere les sources (HTTPS), les fusionne dans le catalogue et sauvegarde.
@@ -670,11 +878,13 @@ function Update-PromoCatalog {
     param(
         [string]$CatalogPath,
         [string]$SourcesPath,
+        [string]$ScrapersPath,
         [int]$TimeoutSec = 20
     )
 
-    if (-not $CatalogPath) { $CatalogPath = Get-PromoCatalogPath }
-    if (-not $SourcesPath) { $SourcesPath = Join-Path $script:ModuleRoot 'config/sources.json' }
+    if (-not $CatalogPath)  { $CatalogPath  = Get-PromoCatalogPath }
+    if (-not $SourcesPath)  { $SourcesPath  = Join-Path $script:ModuleRoot 'config/sources.json' }
+    if (-not $ScrapersPath) { $ScrapersPath = Join-Path $script:ModuleRoot 'config/scrapers.json' }
 
     $catalog = Get-PromoCatalog -Path $CatalogPath
     $sources = Get-PromoSources -Path $SourcesPath
@@ -714,6 +924,33 @@ function Update-PromoCatalog {
         }
     }
 
+    # --- Scrapers de sites nommes (Amazon, etc.) ---------------------------
+    foreach ($scraper in (Get-PromoScrapers -Path $ScrapersPath)) {
+        if ($scraper.PSObject.Properties.Name -contains 'enabled' -and -not $scraper.enabled) { continue }
+        $sid = if ($scraper.PSObject.Properties.Name -contains 'id') { [string]$scraper.id } else { '?' }
+
+        try {
+            $site = Invoke-PromoScraper -Scraper $scraper -TimeoutSec $TimeoutSec -Today $today
+        } catch {
+            Write-Warning "Scraper '$sid' injoignable/invalide : $($_.Exception.Message)"
+            $failed++
+            continue
+        }
+
+        try {
+            $wrapped = [pscustomobject]@{ schemaVersion = '1.0'; sites = @($site) }
+            $res = Merge-PromoCatalog -Catalog $catalog -Source $wrapped -Today $today
+            $added += $res.Added
+            $updated += $res.Updated
+            if (@($site.codes).Count -gt 0) { $okSources++ }
+            Write-Verbose "Scraper '$sid' : $(@($site.codes).Count) code(s) extrait(s)."
+        } catch {
+            Write-Warning "Scraper '$sid' : fusion impossible -> $($_.Exception.Message)"
+            $failed++
+            continue
+        }
+    }
+
     $catalog | Add-Member -NotePropertyName lastUpdated -NotePropertyValue $today.ToString('yyyy-MM-dd') -Force
 
     if ($PSCmdlet.ShouldProcess($CatalogPath, 'Enregistrer le catalogue mis a jour')) {
@@ -733,5 +970,6 @@ Export-ModuleMember -Function @(
     'Get-PromoConfig', 'Get-PromoCatalogPath', 'Get-PromoCatalog', 'Save-PromoCatalog',
     'Test-PromoCodeActive', 'Test-SiteMatchesCountry', 'Test-CountryCode', 'ConvertTo-PromoDate',
     'Find-PromoCode', 'Add-PromoSite', 'Add-PromoCode', 'Set-PromoCode', 'Remove-PromoCode',
-    'Get-PromoSources', 'Merge-PromoCatalog', 'Update-PromoCatalog'
+    'Get-PromoSources', 'Merge-PromoCatalog', 'Update-PromoCatalog',
+    'Get-PromoScrapers', 'ConvertFrom-ScrapedHtml', 'Invoke-PromoScraper', 'Add-PromoScraper'
 )

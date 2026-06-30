@@ -181,3 +181,41 @@ Describe 'Merge-PromoCatalog (mise a jour)' {
         { Merge-PromoCatalog -Catalog $script:Cat -Source $bad -Today $script:Day } | Should -Throw
     }
 }
+
+Describe 'ConvertFrom-ScrapedHtml (scraping)' {
+    BeforeAll {
+        $script:Scraper = [pscustomobject]@{
+            id = 'test-shop'; name = 'Test Shop'; url = 'https://test.example'
+            countries = @('FR'); categories = @('general')
+            codePattern = '(?i)code[^A-Za-z0-9]{0,5}(?<code>[A-Z0-9]{4,12})'
+            defaultValidityDays = 15; maxCodes = 10
+        }
+        $script:Html = 'Promo CODE: SUMMER20 ... CODE WELCOME10 ... doublon CODE: SUMMER20 ... bruit CODE: AB'
+        $script:Day = [datetime]'2026-06-30'
+    }
+    It 'extrait et dedoublonne les codes valides' {
+        $site = ConvertFrom-ScrapedHtml -Html $script:Html -Scraper $script:Scraper -Today $script:Day
+        @($site.codes).Count | Should -Be 2
+        @($site.codes.code) | Should -Contain 'SUMMER20'
+        @($site.codes.code) | Should -Contain 'WELCOME10'
+    }
+    It 'applique une validite glissante et marque la source' {
+        $site = ConvertFrom-ScrapedHtml -Html $script:Html -Scraper $script:Scraper -Today $script:Day
+        $c = $site.codes | Select-Object -First 1
+        $c.validFrom  | Should -Be '2026-06-30'
+        $c.validUntil | Should -Be '2026-07-15'
+        $c.source     | Should -Be 'scrape'
+    }
+    It 'gere un HTML vide sans erreur' {
+        $site = ConvertFrom-ScrapedHtml -Html '' -Scraper $script:Scraper -Today $script:Day
+        @($site.codes).Count | Should -Be 0
+    }
+    It 'respecte maxCodes' {
+        $sc2 = $script:Scraper.PSObject.Copy(); $sc2.maxCodes = 1
+        (ConvertFrom-ScrapedHtml -Html $script:Html -Scraper $sc2 -Today $script:Day).codes.Count | Should -Be 1
+    }
+    It 'leve si codePattern manquant' {
+        $bad = [pscustomobject]@{ id = 'x'; name = 'X'; countries = @('FR') }
+        { ConvertFrom-ScrapedHtml -Html $script:Html -Scraper $bad } | Should -Throw
+    }
+}

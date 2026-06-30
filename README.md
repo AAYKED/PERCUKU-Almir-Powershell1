@@ -19,6 +19,10 @@ src/PromoAggregator.psd1        Manifeste du module
 src/PromoAggregator.psm1        Module : logique métier (validation, filtres, gestion)
 data/promo-codes.json           CATALOGUE ÉDITABLE — tes sites, codes et offres
 config/settings.json            Réglages (pays par défaut, régions restreintes)
+config/sources.json             Flux JSON de mise à jour (à activer/ajouter)
+config/scrapers.json            Sites à scraper par nom (Amazon, etc.)
+Update-Promos.ps1               Mise à jour manuelle/planifiée (récup + fusion)
+.github/workflows/              Planification cron tous les 3 jours
 tests/PromoAggregator.Tests.ps1 Suite de tests Pester
 tests/Invoke-Checks.ps1         Vérificateur sans dépendance (si Pester indisponible)
 ```
@@ -128,7 +132,39 @@ Le catalogue peut se **rafraîchir automatiquement** pour récupérer de nouveau
 
 La fusion (`Merge-PromoCatalog`) **dédoublonne** par identifiant de code (par site) et par titre d'offre : relancer la mise à jour ne crée pas de doublons. Les sources injoignables ou invalides sont ignorées sans bloquer les autres.
 
-> Note : il n'existe pas de scraper universel fiable pour « tous les sites du monde ». L'approche par flux configurables est volontaire (robuste, légale, sûre). Si tu veux un scraper dédié pour un site précis et nommé, il suffit d'écrire un petit *provider* qui renvoie le format catalogue, puis de l'appeler dans la mise à jour — le reste du moteur ne change pas.
+### Scraper des sites nommés (Amazon, etc.)
+
+En plus des flux JSON, la mise à jour peut **scraper des sites que tu nommes**. Les sites sont décrits dans `config/scrapers.json` (**Amazon FR et US** y sont déjà). Chaque entrée :
+
+```json
+{
+  "id": "amazon-fr",
+  "name": "Amazon France",
+  "url": "https://www.amazon.fr/promotions",
+  "countries": ["FR"],
+  "categories": ["general"],
+  "codePattern": "(?i)code[^A-Za-z0-9]{0,15}(?<code>[A-Z0-9]{5,12})",
+  "defaultValidityDays": 30,
+  "maxCodes": 50,
+  "enabled": true
+}
+```
+
+- `codePattern` est une **regex** avec un groupe nommé obligatoire `(?<code>...)`, et des groupes optionnels `(?<description>...)` et `(?<discount>...)`.
+- Les codes scrapés reçoivent une **validité glissante** (`validFrom` = aujourd'hui, `validUntil` = aujourd'hui + `defaultValidityDays`) : un code disparu de la page **expire de lui-même** à la mise à jour suivante.
+- `maxCodes` plafonne le nombre de codes par site ; une liste blanche de format filtre le bruit.
+
+**Ajouter un site en une commande :**
+
+```powershell
+Import-Module ./src/PromoAggregator.psd1
+Add-PromoScraper -Id 'fnac' -Name 'Fnac' -Url 'https://www.fnac.com/promotions' `
+    -Countries FR -CodePattern '(?i)code[^A-Za-z0-9]{0,15}(?<code>[A-Z0-9]{5,12})'
+```
+
+Puis `pwsh ./Update-Promos.ps1 -Force` (ou attends le cycle de 3 jours).
+
+> ⚠️ **À savoir** : respecte les CGU et le `robots.txt` de chaque site. Les pages des grands sites sont souvent dynamiques (JavaScript) — `url` doit pointer vers une page qui contient réellement les codes en HTML, et `codePattern` doit être **ajusté à la structure de cette page** pour extraire de vrais codes. Le moteur est générique et sûr ; l'ajustement du motif est ce qui rend l'extraction efficace pour un site donné. Dis-moi le site et la page, je calibre le motif.
 
 ## Tests
 
@@ -148,4 +184,5 @@ pwsh -c "Invoke-Pester ./tests/PromoAggregator.Tests.ps1"
 - **Validation du schéma** du catalogue à chaque chargement avant toute opération.
 - **Écriture atomique** du catalogue (fichier temporaire + remplacement) en **UTF-8 sans BOM** (compatibilité des caractères chinois).
 - Lectures de fichiers via `-LiteralPath` (pas d'interprétation de jokers).
-- **Mise à jour réseau confinée** à `Update-PromoCatalog` : **HTTPS uniquement** (autres schémas refusés), redirections limitées, délai d'attente, et **données externes traitées comme non fiables** — validées par le schéma avant fusion. Aucune donnée distante n'est exécutée.
+- **Mise à jour réseau confinée** à `Update-PromoCatalog` / `Invoke-PromoScraper` : **HTTPS uniquement** (autres schémas refusés), redirections limitées, délai d'attente, et **données externes traitées comme non fiables** — validées par le schéma avant fusion. Aucune donnée distante n'est exécutée.
+- **Scraping sûr** : le HTML est traité comme du **texte** (extraction par regex, jamais d'exécution), la regex a un **délai d'expiration** (anti-ReDoS), les codes sont filtrés par liste blanche de format et plafonnés (`maxCodes`). Une page injoignable ou bloquée n'ajoute **aucun** code et n'interrompt pas la mise à jour.

@@ -9,7 +9,8 @@
         'Get-PromoConfig', 'Get-PromoCatalogPath', 'Get-PromoCatalog', 'Save-PromoCatalog',
         'Test-PromoCodeActive', 'Test-SiteMatchesCountry', 'Test-CountryCode', 'ConvertTo-PromoDate',
         'Find-PromoCode', 'Add-PromoSite', 'Add-PromoCode', 'Set-PromoCode', 'Remove-PromoCode',
-        'Get-PromoSources', 'Merge-PromoCatalog', 'Update-PromoCatalog'
+        'Get-PromoSources', 'Merge-PromoCatalog', 'Update-PromoCatalog',
+        'Get-PromoScrapers', 'ConvertFrom-ScrapedHtml', 'Invoke-PromoScraper', 'Add-PromoScraper'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

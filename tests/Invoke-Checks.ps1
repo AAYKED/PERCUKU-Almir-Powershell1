@@ -157,6 +157,49 @@ try {
         @($sources | Where-Object { $_.enabled }).Count -eq 0
     }
 
+    Write-Host "`nScraping de sites nommes (ConvertFrom-ScrapedHtml)" -ForegroundColor Cyan
+    $scraper = [pscustomobject]@{
+        id = 'test-shop'; name = 'Test Shop'; url = 'https://test.example'
+        countries = @('FR'); categories = @('general')
+        codePattern = '(?i)code[^A-Za-z0-9]{0,5}(?<code>[A-Z0-9]{4,12})'
+        defaultValidityDays = 15; maxCodes = 10
+    }
+    $html = 'Promo CODE: SUMMER20 ... autre CODE WELCOME10 ... doublon CODE: SUMMER20 ... bruit CODE: AB'
+    Check 'extrait les codes valides et dedoublonne' {
+        $site = ConvertFrom-ScrapedHtml -Html $html -Scraper $scraper -Today ([datetime]'2026-06-30')
+        $codes = @($site.codes.code)
+        (@($site.codes).Count -eq 2) -and ($codes -contains 'SUMMER20') -and ($codes -contains 'WELCOME10')
+    }
+    Check 'applique la validite glissante' {
+        $site = ConvertFrom-ScrapedHtml -Html $html -Scraper $scraper -Today ([datetime]'2026-06-30')
+        $c = $site.codes | Select-Object -First 1
+        ($c.validFrom -eq '2026-06-30') -and ($c.validUntil -eq '2026-07-15') -and ($c.source -eq 'scrape')
+    }
+    Check 'HTML vide -> aucun code, site valide' {
+        $site = ConvertFrom-ScrapedHtml -Html '' -Scraper $scraper -Today ([datetime]'2026-06-30')
+        (@($site.codes).Count -eq 0) -and ($site.id -eq 'test-shop')
+    }
+    Check 'respecte maxCodes' {
+        $sc2 = $scraper.PSObject.Copy(); $sc2.maxCodes = 1
+        $site = ConvertFrom-ScrapedHtml -Html $html -Scraper $sc2 -Today ([datetime]'2026-06-30')
+        @($site.codes).Count -eq 1
+    }
+    Check 'le resultat scrape est fusionnable' {
+        $cat = Get-PromoCatalog -Path $tmp
+        $site = ConvertFrom-ScrapedHtml -Html $html -Scraper $scraper -Today ([datetime]'2026-06-30')
+        $wrapped = [pscustomobject]@{ schemaVersion = '1.0'; sites = @($site) }
+        $r = Merge-PromoCatalog -Catalog $cat -Source $wrapped -Today ([datetime]'2026-06-30')
+        ($r.Added -ge 2) -and ($null -ne ($cat.sites | Where-Object id -eq 'test-shop'))
+    }
+    CheckThrows 'scraper sans codePattern leve' {
+        $bad = [pscustomobject]@{ id = 'x'; name = 'X'; countries = @('FR') }
+        ConvertFrom-ScrapedHtml -Html $html -Scraper $bad
+    }
+    Check 'config/scrapers.json valide et Amazon present' {
+        $defs = Get-PromoScrapers -Path (Join-Path $Root 'config/scrapers.json')
+        @($defs | Where-Object { $_.id -like 'amazon*' }).Count -ge 1
+    }
+
     Write-Host "`nValidation du catalogue livre (data/promo-codes.json)" -ForegroundColor Cyan
     Check 'catalogue principal valide'  { $null -ne (Get-PromoCatalog) }
 }
