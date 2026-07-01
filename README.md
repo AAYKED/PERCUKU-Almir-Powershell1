@@ -25,7 +25,18 @@ pwsh ./Update-Promos.ps1 -Force  # rafraichir les codes promo
 pwsh ./tests/Invoke-Checks.ps1   # lancer les tests
 ```
 
-> Sous Windows tu peux aussi double-cliquer un raccourci `pwsh -File Watch-Prices.ps1`, ou planifier la tâche (voir plus bas).
+### Lancement en un double-clic (Windows, fichiers .bat)
+
+Pas envie de taper des commandes ? Double-clique simplement l'un de ces fichiers à la racine du projet :
+
+| Fichier | Ce qu'il fait |
+|---------|---------------|
+| **`1-Initialiser-Prix.bat`** | À lancer **une fois** : enregistre les prix actuels comme référence (sans alerte). |
+| **`Suivi-Prix.bat`** | Relève les prix et **t'alerte** si un prix a bougé (baisse/hausse). |
+| **`Codes-Promo.bat`** | Ouvre la recherche de codes promo (mode interactif). |
+| **`Planifier-Automatique.bat`** | Programme le suivi **tout seul toutes les 6 h** (tâche Windows). |
+
+Ces fichiers trouvent PowerShell 7 automatiquement et contournent la restriction d'exécution — rien à configurer. S'ils affichent que `pwsh` est introuvable, installe PowerShell 7 (`winget install Microsoft.PowerShell`) puis relance.
 
 ## Pourquoi cette architecture (orientée données)
 
