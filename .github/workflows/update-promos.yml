@@ -1,0 +1,41 @@
+name: Mise a jour des codes promo
+
+# Tous les 3 jours (06:00 UTC les jours 1, 4, 7, ... du mois) + declenchement manuel.
+on:
+  schedule:
+    - cron: '0 6 */3 * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update-promos
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recuperer le depot
+        uses: actions/checkout@v4
+
+      - name: Mettre a jour le catalogue
+        shell: pwsh
+        run: ./Update-Promos.ps1 -Force
+
+      - name: Verifier le catalogue
+        shell: pwsh
+        run: ./tests/Invoke-Checks.ps1
+
+      - name: Commit & push si changement
+        run: |
+          if [ -n "$(git status --porcelain data/promo-codes.json)" ]; then
+            git config user.name "promo-update-bot"
+            git config user.email "promo-update-bot@users.noreply.github.com"
+            git add data/promo-codes.json
+            git commit -m "chore: mise a jour automatique des codes promo (tous les 3 jours)"
+            git push
+          else
+            echo "Aucun nouveau code promo : rien a committer."
+          fi

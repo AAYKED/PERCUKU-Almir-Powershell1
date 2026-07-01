@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "_comment": "Sources de mise a jour automatique. Chaque source pointe vers un flux JSON en HTTPS, au MEME format que data/promo-codes.json (objet avec une cle 'sites'). Ajoute/active tes sources ici : mets 'enabled' a true et renseigne une vraie URL. La mise a jour tourne tous les 3 jours via .github/workflows/update-promos.yml, ou manuellement avec ./Update-Promos.ps1.",
+  "sources": [
+    {
+      "id": "exemple-flux",
+      "url": "https://exemple.com/promo-feed.json",
+      "enabled": false,
+      "description": "Exemple desactive. Remplace l'URL par un vrai flux et mets enabled=true."
+    }
+  ]
+}

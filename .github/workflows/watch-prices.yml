@@ -1,0 +1,51 @@
+name: Suivi des prix (PS5)
+
+# Tous les jours a 07:00 UTC + declenchement manuel.
+on:
+  schedule:
+    - cron: '0 7 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: watch-prices
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Recuperer le depot
+        uses: actions/checkout@v4
+
+      - name: Installer Node et le mode navigateur (Fnac/Carrefour)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Installer Playwright + Chromium
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Relever les prix et alerter
+        shell: pwsh
+        env:
+          # Definis un secret de depot 'PROMO_ALERT_WEBHOOK' (URL HTTPS Discord/Slack)
+          # pour recevoir les alertes directement. Sinon, alertes en log uniquement.
+          PROMO_ALERT_WEBHOOK: ${{ secrets.PROMO_ALERT_WEBHOOK }}
+        run: ./Watch-Prices.ps1
+
+      - name: Commit de l'historique des prix si change
+        run: |
+          if [ -n "$(git status --porcelain data/price-history.json)" ]; then
+            git config user.name "price-watch-bot"
+            git config user.email "price-watch-bot@users.noreply.github.com"
+            git add data/price-history.json
+            git commit -m "chore: mise a jour de l'historique des prix"
+            git push
+          else
+            echo "Aucun changement de prix a enregistrer."
+          fi

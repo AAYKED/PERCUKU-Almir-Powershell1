@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "1.0",
+  "_comment": "Sites a scraper pour les CODES PROMO, par nom. Perimetre actuel : Amazon et Fnac. (Carrefour est suivi uniquement pour le prix de la PS5 : voir config/products.json.) Pour ajouter un site : duplique un bloc ou utilise Add-PromoScraper. 'codePattern' = regex avec un groupe nomme obligatoire (?<code>...).",
+  "_caveat": "Respecte les CGU et le robots.txt de chaque site. 'url' doit pointer vers une page contenant reellement les codes en HTML, et 'codePattern' doit etre ajuste a cette page pour extraire de vrais codes.",
+  "scrapers": [
+    {
+      "id": "amazon-fr",
+      "name": "Amazon France",
+      "url": "https://www.amazon.fr/promotions",
+      "countries": ["FR"],
+      "categories": ["general"],
+      "codePattern": "(?i)code[^A-Za-z0-9]{0,15}(?<code>[A-Z0-9]{5,12})",
+      "defaultValidityDays": 30,
+      "maxCodes": 50,
+      "enabled": true
+    },
+    {
+      "id": "fnac",
+      "name": "Fnac",
+      "url": "https://www.fnac.com/promotions",
+      "countries": ["FR"],
+      "categories": ["general"],
+      "codePattern": "(?i)code[^A-Za-z0-9]{0,15}(?<code>[A-Z0-9]{5,12})",
+      "defaultValidityDays": 30,
+      "maxCodes": 50,
+      "enabled": true
+    }
+  ]
+}

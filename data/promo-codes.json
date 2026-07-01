@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "1.0",
+  "_comment": "Catalogue editable. Perimetre actuel : Amazon et Fnac. Ajoute/modifie des sites, des codes et des offres ici. Dates au format AAAA-MM-JJ. Un code n'est propose que si 'active' = true ET si la date du jour est comprise entre validFrom et validUntil. Les codes recuperes automatiquement portent 'source': 'scrape'.",
+  "sites": [
+    {
+      "id": "amazon-fr",
+      "name": "Amazon France",
+      "url": "https://www.amazon.fr",
+      "countries": ["FR", "BE", "LU", "MC"],
+      "categories": ["electronique", "livres", "maison", "jeux-video", "general"],
+      "codes": [
+        {
+          "code": "TECH10",
+          "description": "10% sur l'electronique des le premier achat",
+          "discount": "-10%",
+          "validFrom": "2026-01-01",
+          "validUntil": "2026-12-31",
+          "minPurchase": 50,
+          "categories": ["electronique"],
+          "active": true
+        },
+        {
+          "code": "LIVRE5",
+          "description": "5 EUR offerts sur les livres",
+          "discount": "-5 EUR",
+          "validFrom": "2026-06-01",
+          "validUntil": "2026-07-15",
+          "minPurchase": 25,
+          "categories": ["livres"],
+          "active": true
+        }
+      ],
+      "offers": [
+        {
+          "title": "Soldes d'ete jusqu'a -50%",
+          "description": "Selection de produits high-tech en promotion.",
+          "url": "https://www.amazon.fr/deals",
+          "validUntil": "2026-08-31"
+        }
+      ]
+    },
+    {
+      "id": "fnac",
+      "name": "Fnac",
+      "url": "https://www.fnac.com",
+      "countries": ["FR", "BE", "CH"],
+      "categories": ["electronique", "livres", "jeux-video", "general"],
+      "codes": [
+        {
+          "code": "FNAC15",
+          "description": "15 EUR de remise des 150 EUR sur le high-tech",
+          "discount": "-15 EUR",
+          "validFrom": "2026-06-01",
+          "validUntil": "2026-09-30",
+          "minPurchase": 150,
+          "categories": ["electronique", "jeux-video"],
+          "active": true
+        }
+      ],
+      "offers": [
+        {
+          "title": "Offres adherents Fnac",
+          "description": "Reductions reservees aux adherents sur une selection de produits.",
+          "url": "https://www.fnac.com/promotions",
+          "validUntil": "2026-12-31"
+        }
+      ]
+    }
+  ],
+  "lastUpdated": "2026-06-30"
+}

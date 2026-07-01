@@ -1,0 +1,16 @@
+# Fichiers temporaires d'ecriture atomique
+*.tmp
+
+# Journal d'alertes genere a l'execution (l'historique des prix, lui, est suivi)
+data/alerts.json
+
+# Dependances Node (mode navigateur Playwright)
+node_modules/
+package-lock.json
+
+# PowerShell / modules locaux
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
