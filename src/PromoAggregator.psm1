@@ -33,15 +33,23 @@ $script:BrowserUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.3
 # Helpers internes
 # ---------------------------------------------------------------------------
 
-# En-tetes HTTP "navigateur" pour les requetes de scraping / prix.
+# En-tetes HTTP imitant une navigation Chrome (aide a passer les WAF simples).
 function Get-RequestHeaders {
     [CmdletBinding()]
     [OutputType([hashtable])]
     param()
     return @{
-        'User-Agent'      = $script:BrowserUA
-        'Accept'          = 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
-        'Accept-Language' = 'fr-FR,fr;q=0.9,en;q=0.8'
+        'User-Agent'                = $script:BrowserUA
+        'Accept'                    = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8'
+        'Accept-Language'           = 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7'
+        'Upgrade-Insecure-Requests' = '1'
+        'Sec-Fetch-Dest'            = 'document'
+        'Sec-Fetch-Mode'            = 'navigate'
+        'Sec-Fetch-Site'            = 'none'
+        'Sec-Fetch-User'            = '?1'
+        'sec-ch-ua'                 = '"Chromium";v="126", "Google Chrome";v="126", "Not.A/Brand";v="24"'
+        'sec-ch-ua-mobile'          = '?0'
+        'sec-ch-ua-platform'        = '"Windows"'
     }
 }
 
