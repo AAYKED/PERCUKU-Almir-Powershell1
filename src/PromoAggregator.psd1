@@ -12,7 +12,8 @@
         'Get-PromoSources', 'Merge-PromoCatalog', 'Update-PromoCatalog',
         'Get-PromoScrapers', 'ConvertFrom-ScrapedHtml', 'Invoke-PromoScraper', 'Add-PromoScraper',
         'ConvertTo-Price', 'ConvertFrom-ScrapedPrice', 'Compare-PriceChange',
-        'Get-PromoProducts', 'Get-PriceHistory', 'Save-PriceHistory', 'Update-PriceWatch', 'Send-PriceAlert'
+        'Get-PromoProducts', 'Get-PriceHistory', 'Save-PriceHistory', 'Update-PriceWatch', 'Send-PriceAlert',
+        'Get-RenderedHtml'
     )
     CmdletsToExport   = @()
     VariablesToExport = @()

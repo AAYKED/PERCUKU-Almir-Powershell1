@@ -1,0 +1,14 @@
+{
+  "name": "promo-aggregator-render",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rendu de pages via navigateur headless (Playwright) pour contourner les protections anti-robot (Fnac/Carrefour).",
+  "type": "module",
+  "scripts": {
+    "postinstall": "playwright install chromium",
+    "fetch": "node tools/fetch-rendered.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.61.1"
+  }
+}

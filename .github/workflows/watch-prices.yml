@@ -20,6 +20,16 @@ jobs:
       - name: Recuperer le depot
         uses: actions/checkout@v4
 
+      - name: Installer Node et le mode navigateur (Fnac/Carrefour)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Installer Playwright + Chromium
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
       - name: Relever les prix et alerter
         shell: pwsh
         env:

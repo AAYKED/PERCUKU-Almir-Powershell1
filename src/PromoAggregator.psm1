@@ -53,6 +53,48 @@ function Get-RequestHeaders {
     }
 }
 
+function Get-RenderedHtml {
+    <#
+    .SYNOPSIS Recupere le HTML *rendu* d'une page via un navigateur headless (Playwright/Node).
+    .DESCRIPTION
+        Delegue a tools/fetch-rendered.mjs pour executer un vrai Chromium, ce qui permet de
+        franchir les protections anti-robot (DataDome/Akamai) de sites comme Fnac/Carrefour.
+        Necessite Node.js et 'npm install' (voir package.json). HTTPS uniquement.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)][string]$Url,
+        [int]$TimeoutSec = 45
+    )
+
+    if ($Url -notmatch '^https://') { throw "URL non HTTPS refusee : $Url" }
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    if (-not $node) {
+        throw "Node.js introuvable. Installe Node.js puis lance 'npm install' pour activer le mode navigateur."
+    }
+    $renderScript = Join-Path $script:ModuleRoot 'tools/fetch-rendered.mjs'
+    if (-not (Test-Path -LiteralPath $renderScript)) {
+        throw "Script de rendu introuvable : $renderScript"
+    }
+
+    $prev = $env:RENDER_TIMEOUT_MS
+    $env:RENDER_TIMEOUT_MS = [string]([int]$TimeoutSec * 1000)
+    $errFile = [System.IO.Path]::GetTempFileName()
+    try {
+        $html = & $node.Source $renderScript $Url 2>$errFile
+        if ($LASTEXITCODE -ne 0) {
+            $err = (Get-Content -LiteralPath $errFile -Raw -ErrorAction SilentlyContinue)
+            throw "Rendu navigateur echoue (code $LASTEXITCODE) : $err"
+        }
+        return ($html -join "`n")
+    } finally {
+        if ($null -eq $prev) { Remove-Item Env:RENDER_TIMEOUT_MS -ErrorAction SilentlyContinue }
+        else { $env:RENDER_TIMEOUT_MS = $prev }
+        if (Test-Path -LiteralPath $errFile) { Remove-Item -LiteralPath $errFile -Force -ErrorAction SilentlyContinue }
+    }
+}
+
 # Validation d'un code pays ISO (2 lettres) ou du mot-cle 'ALL'.
 function Test-CountryCode {
     [CmdletBinding()]
@@ -816,8 +858,13 @@ function Invoke-PromoScraper {
         throw "Scraper '$($Scraper.id)' : URL non HTTPS '$url' (HTTPS obligatoire)."
     }
 
-    $resp = Invoke-WebRequest -Uri $url -TimeoutSec $TimeoutSec -MaximumRedirection 3 -Headers (Get-RequestHeaders)
-    $html = [string]$resp.Content
+    $render = if ($Scraper.PSObject.Properties.Name -contains 'render') { [string]$Scraper.render } else { 'http' }
+    if ($render -eq 'browser') {
+        $html = Get-RenderedHtml -Url $url -TimeoutSec ([Math]::Max($TimeoutSec, 45))
+    } else {
+        $resp = Invoke-WebRequest -Uri $url -TimeoutSec $TimeoutSec -MaximumRedirection 3 -Headers (Get-RequestHeaders)
+        $html = [string]$resp.Content
+    }
 
     return ConvertFrom-ScrapedHtml -Html $html -Scraper $Scraper -Today $Today
 }
@@ -1285,9 +1332,15 @@ function Update-PriceWatch {
             if ($url -notmatch '^https://') { Write-Warning "Produit '$($product.id)'/$siteId : URL non HTTPS ignoree."; $failed++; continue }
             if ([string]::IsNullOrWhiteSpace($pattern)) { Write-Warning "Produit '$($product.id)'/$siteId : pricePattern manquant."; $failed++; continue }
 
+            $render = if ($site.PSObject.Properties.Name -contains 'render') { [string]$site.render } else { 'http' }
             try {
-                $resp = Invoke-WebRequest -Uri $url -TimeoutSec $TimeoutSec -MaximumRedirection 3 -Headers (Get-RequestHeaders)
-                $price = ConvertFrom-ScrapedPrice -Html ([string]$resp.Content) -Pattern $pattern
+                if ($render -eq 'browser') {
+                    $html = Get-RenderedHtml -Url $url -TimeoutSec ([Math]::Max($TimeoutSec, 45))
+                } else {
+                    $resp = Invoke-WebRequest -Uri $url -TimeoutSec $TimeoutSec -MaximumRedirection 3 -Headers (Get-RequestHeaders)
+                    $html = [string]$resp.Content
+                }
+                $price = ConvertFrom-ScrapedPrice -Html $html -Pattern $pattern
             } catch {
                 Write-Warning "Produit '$($product.id)'/$siteId : page injoignable -> $($_.Exception.Message)"
                 $failed++
@@ -1353,5 +1406,6 @@ Export-ModuleMember -Function @(
     'Get-PromoSources', 'Merge-PromoCatalog', 'Update-PromoCatalog',
     'Get-PromoScrapers', 'ConvertFrom-ScrapedHtml', 'Invoke-PromoScraper', 'Add-PromoScraper',
     'ConvertTo-Price', 'ConvertFrom-ScrapedPrice', 'Compare-PriceChange',
-    'Get-PromoProducts', 'Get-PriceHistory', 'Save-PriceHistory', 'Update-PriceWatch', 'Send-PriceAlert'
+    'Get-PromoProducts', 'Get-PriceHistory', 'Save-PriceHistory', 'Update-PriceWatch', 'Send-PriceAlert',
+    'Get-RenderedHtml'
 )

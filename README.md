@@ -31,6 +31,7 @@ Pas envie de taper des commandes ? Double-clique simplement l'un de ces fichiers
 
 | Fichier | Ce qu'il fait |
 |---------|---------------|
+| **`2-Installer-Navigateur.bat`** | (Optionnel) Installe le mode navigateur pour **Fnac/Carrefour**. À lancer une fois. |
 | **`1-Initialiser-Prix.bat`** | À lancer **une fois** : enregistre les prix actuels comme référence (sans alerte). |
 | **`Suivi-Prix.bat`** | Relève les prix et **t'alerte** si un prix a bougé (baisse/hausse). |
 | **`Codes-Promo.bat`** | Ouvre la recherche de codes promo (mode interactif). |
@@ -274,7 +275,24 @@ Le projet n'a **pas besoin de GitHub** pour fonctionner : tout tourne sur ta mac
 
 > Linux/macOS : `Register-PriceWatchTask.ps1` affiche la ligne `cron` équivalente à coller dans `crontab -e`.
 
-> ⚠️ Les pages des grands sites sont souvent dynamiques (JavaScript) : pour extraire un prix fiable, `url` doit pointer vers une page qui contient le prix dans le HTML (la fiche produit fonctionne souvent via ses données structurées JSON-LD), et `pricePattern` doit correspondre. Donne-moi les URLs exactes des fiches PS5 et je calibre les motifs.
+### Mode navigateur (Fnac, Carrefour…) — contourner l'anti-robot
+
+Certains sites (Fnac via DataDome, Carrefour via Akamai) renvoient une erreur **403** aux simples requêtes HTTP. Pour eux, on utilise un **vrai navigateur headless** (Chromium via Playwright) qui exécute le JavaScript et franchit ces protections. Il suffit d'ajouter `"render": "browser"` à l'entrée du site dans `config/products.json` (déjà fait pour Fnac et Carrefour).
+
+**Installation (une seule fois)** — nécessite **Node.js** (`winget install OpenJS.NodeJS.LTS`) :
+
+```powershell
+npm install                      # installe Playwright
+npx playwright install chromium  # télécharge le navigateur
+```
+
+Sous Windows, double-clique simplement **`2-Installer-Navigateur.bat`** qui fait tout ça. Ensuite, `Watch-Prices.ps1` relève Fnac/Carrefour via le navigateur, automatiquement.
+
+- **Amazon** reste en mode HTTP simple (rapide, pas besoin du navigateur).
+- Le mode navigateur est plus lent (quelques secondes/page) mais fiable.
+- Depuis un serveur cloud (GitHub Actions), Fnac/Carrefour peuvent quand même bloquer par IP : le relevé est **plus fiable depuis ta machine**.
+
+> ⚠️ Les pages des grands sites sont souvent dynamiques (JavaScript) : `url` doit pointer vers la fiche produit réelle, et `pricePattern` cible son prix (souvent dans les données structurées JSON-LD). Si un relevé renvoie « prix introuvable », préviens-moi et j'ajuste le motif.
 
 ## Tests
 
